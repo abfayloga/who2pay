@@ -1,16 +1,15 @@
-# React + Vite
+# When2Split
+A minimal, real-time expense-splitting web application built with React and Supabase. Create an expense room, distribute the generated link to group members, and track shared balances across devices instantly with zero registration required.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Features
+* No Sign-Ups Needed: Create or join group ledgers immediately via a unique room link.
+* Real-Time Synchronization: Updates sync instantly across all open browser sessions using Supabase Realtime.
+* Flexible Expense Entry: Supports single or multi-payer contributions with customized split participant selection.
+* Automated Settlement Engine: Calculates optimal payment routes to clear balances with minimal transactions.
+* Search & Filters: Filter transactions by participant, entry type, keyword, or date range.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Tech Stack
+* Frontend Framework: React + Vite
+* Routing: React Router DOM
+* Styling: Tailwind CSS
+* Backend / Database: Supabase (PostgreSQL + Realtime Subscriptions)
