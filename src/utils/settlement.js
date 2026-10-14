@@ -1,3 +1,5 @@
+import { getExpenseShares, cents, allocateCents } from './splitShares.js';
+
 export function calculateFinancials(members, expenses) {
   const balances = {};
   const totalPaid = {};
@@ -15,7 +17,7 @@ export function calculateFinancials(members, expenses) {
 
     if (splitWith.length === 0 || amount <= 0) return;
 
-    const splitShare = amount / splitWith.length;
+    const shares = getExpenseShares(exp);
 
     // 1. Credit payers (supports both multiple payers array & legacy single paidBy)
     if (Array.isArray(exp.payers) && exp.payers.length > 0) {
@@ -40,10 +42,10 @@ export function calculateFinancials(members, expenses) {
     // 2. Debit debtors
     splitWith.forEach((person) => {
       if (balances[person] !== undefined) {
-        balances[person] -= splitShare;
+        balances[person] -= Number(shares[person]) || 0;
       }
       if (totalShare[person] !== undefined && !exp.isSettlement) {
-        totalShare[person] += splitShare;
+        totalShare[person] += Number(shares[person]) || 0;
       }
     });
   });
@@ -86,4 +88,45 @@ export function calculateFinancials(members, expenses) {
   }
 
   return { balances, totalPaid, totalShare, settlements };
+}
+
+// Build expense-specific repayments in integer cents to avoid rounding errors.
+// These entries follow the same semantics as the app's regular settlements.
+export function transfersForExpense(expense) {
+  if (!expense || expense.isSettlement) return [];
+  const participants = [...new Set(expense.splitWith || [])];
+  const totalCents = Math.round(Number(expense.amount) * 100);
+  if (!participants.length || !Number.isSafeInteger(totalCents) || totalCents <= 0) return [];
+  const balances = new Map();
+  const allocated = expense.splitShares
+    ? Object.fromEntries(Object.entries(getExpenseShares(expense)).map(([name, value]) => [name, cents(value)]))
+    : allocateCents(totalCents, participants);
+  if (Object.values(allocated).reduce((sum, n) => sum + n, 0) !== totalCents) return [];
+  Object.entries(allocated).forEach(([name, share]) => balances.set(name, -share));
+  const payers = Array.isArray(expense.payers) && expense.payers.length
+    ? expense.payers : [{ member: expense.paidBy, amount: expense.amount }];
+  let paidCents = 0;
+  for (let i = 0; i < payers.length; i += 1) {
+    const payer = payers[i];
+    // Assign any final rounding remainder to the last payer.
+    const cents = i === payers.length - 1
+      ? totalCents - paidCents : Math.round(Number(payer.amount) * 100);
+    if (!payer.member || !Number.isSafeInteger(cents) || cents < 0) return [];
+    balances.set(payer.member, (balances.get(payer.member) || 0) + cents);
+    paidCents += cents;
+  }
+  const debtors = [...balances].filter(([, cents]) => cents < 0).map(([name, cents]) => ({ name, cents: -cents }));
+  const creditors = [...balances].filter(([, cents]) => cents > 0).map(([name, cents]) => ({ name, cents }));
+  const transfers = [];
+  let i = 0;
+  let j = 0;
+  while (i < debtors.length && j < creditors.length) {
+    const cents = Math.min(debtors[i].cents, creditors[j].cents);
+    if (cents > 0) transfers.push({ from: debtors[i].name, to: creditors[j].name, amount: cents / 100 });
+    debtors[i].cents -= cents;
+    creditors[j].cents -= cents;
+    if (!debtors[i].cents) i += 1;
+    if (!creditors[j].cents) j += 1;
+  }
+  return transfers;
 }
