@@ -61,3 +61,6 @@ html.w2p-dark .transaction-mobile-list > :not([hidden]) ~ :not([hidden]) {
   border-top-color: #303036 !important;
   border-bottom-color: #303036 !important;
 }
+
+/* Mobile transactions distinguish types with backgrounds, not side bars. */
+html.w2p-dark .transaction-mobile-list > article { border-left: 0 !important; }

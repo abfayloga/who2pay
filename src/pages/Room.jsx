@@ -1279,7 +1279,7 @@ export default function Room() {
                   </div>
                   <div className="transaction-mobile-list divide-y divide-[#e2e8f0] md:hidden">
                     {filteredExpenses.map((expense) => (
-                      <article key={expense.id} className={`px-3 py-3 ${expense.isSettlement ? 'bg-[#eef6f9] border-l-[3px] border-[#3e8da6]' : 'bg-white border-l-[3px] border-transparent'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}>
+                      <article key={expense.id} className={`px-3 py-3 ${expense.isSettlement ? 'bg-[#eef6f9]' : 'bg-white'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}>
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <p className="break-words text-sm font-semibold leading-5">{expense.desc}</p>
