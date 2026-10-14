@@ -54,3 +54,10 @@ html.w2p-dark [data-member-chip="true"] { background-color: #252529 !important; 
 html.w2p-dark [class~="text-white"] { color: #ffffff !important; }
 html.w2p-dark [class~="bg-[#0f172a]"] { background: #27272a !important; }
 html.w2p-dark :focus-visible { outline-color: #2dd4bf; }
+
+/* Dark-mode transaction separators: Tailwind divide-y applies borders to siblings,
+   so overriding border-* utility classes alone does not affect these lines. */
+html.w2p-dark .transaction-mobile-list > :not([hidden]) ~ :not([hidden]) {
+  border-top-color: #303036 !important;
+  border-bottom-color: #303036 !important;
+}
