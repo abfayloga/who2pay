@@ -1,0 +1,56 @@
+/* Scoped overrides for the existing flat, Tailwind-styled UI. No gradients. */
+html.w2p-dark { color-scheme: dark; background: #09090b; }
+html.w2p-dark body { background: #09090b; }
+html.w2p-dark [class~="bg-white"] { background-color: #18181b !important; }
+html.w2p-dark [class~="bg-[#f7f6f3]"] { background-color: #09090b !important; }
+html.w2p-dark [class~="bg-[#faf9f6]"] { background-color: #18181b !important; }
+html.w2p-dark [class~="bg-[#f0fdfa]"] { background-color: #122825 !important; }
+html.w2p-dark [class~="bg-[#f1f5f9]"] { background-color: #242429 !important; }
+html.w2p-dark [class~="bg-[#f2f8f5]"] { background-color: #132420 !important; }
+html.w2p-dark [class~="bg-[#fff7ed]"] { background-color: #291e18 !important; }
+html.w2p-dark [class~="bg-[#eef6f9]"] { background-color: #13252b !important; }
+html.w2p-dark [class~="bg-[#f0fdf4]"] { background-color: #132a1c !important; }
+html.w2p-dark [class~="bg-[#fff1f2]"] { background-color: #301b22 !important; }
+html.w2p-dark [class~="bg-[#ccfbf1]"] { background-color: #143b36 !important; }
+html.w2p-dark [class~="text-[#0f172a]"] { color: #fafafa !important; }
+html.w2p-dark [class~="text-[#334155]"] { color: #e4e4e7 !important; }
+html.w2p-dark [class~="text-[#475569]"] { color: #d4d4d8 !important; }
+html.w2p-dark [class~="text-[#64748b]"] { color: #a1a1aa !important; }
+html.w2p-dark [class~="text-[#94a3b8]"] { color: #a1a1aa !important; }
+html.w2p-dark [class~="text-[#77756e]"] { color: #a1a1aa !important; }
+html.w2p-dark [class~="text-[#6b5e45]"] { color: #d4d4d8 !important; }
+html.w2p-dark [class~="text-[#315d53]"] { color: #a0e8cf !important; }
+html.w2p-dark [class~="text-[#173f37]"] { color: #e3fff3 !important; }
+html.w2p-dark [class~="text-[#627c74]"] { color: #a8c6b7 !important; }
+html.w2p-dark [class~="text-[#905a28]"] { color: #f1bd8d !important; }
+html.w2p-dark [class~="text-[#75431e]"] { color: #f7d0aa !important; }
+html.w2p-dark [class~="text-[#9b744f]"] { color: #d6ae88 !important; }
+html.w2p-dark [class~="text-[#b8793d]"] { color: #efb677 !important; }
+html.w2p-dark [class~="text-[#166534]"] { color: #86efac !important; }
+html.w2p-dark [class~="text-[#15803d]"] { color: #86efac !important; }
+html.w2p-dark [class~="text-[#047857]"] { color: #6ee7b7 !important; }
+html.w2p-dark [class~="text-[#b91c1c]"] { color: #fca5a5 !important; }
+html.w2p-dark [class~="text-[#be123c]"] { color: #fda4af !important; }
+html.w2p-dark [class~="text-[#92400e]"] { color: #fdba74 !important; }
+html.w2p-dark [class~="border-[#e6e3dc]"] { border-color: #303036 !important; }
+html.w2p-dark [class~="border-[#cbd5e1]"] { border-color: #3f3f46 !important; }
+html.w2p-dark [class~="border-[#dedbd4]"] { border-color: #303036 !important; }
+html.w2p-dark [class~="border-[#eeeeea]"] { border-color: #303036 !important; }
+html.w2p-dark [class~="border-[#e2e8f0]"] { border-color: #303036 !important; }
+html.w2p-dark [class~="border-[#e4dccb]"] { border-color: #454044 !important; }
+html.w2p-dark [class~="border-[#d5e3de]"] { border-color: #31554c !important; }
+html.w2p-dark [class~="border-[#c8ded4]"] { border-color: #31554c !important; }
+html.w2p-dark [class~="border-[#ead4bb]"] { border-color: #554033 !important; }
+html.w2p-dark [class~="border-[#b8793d]"] { border-color: #a76f3a !important; }
+html.w2p-dark [class~="border-[#247367]"] { border-color: #277f6b !important; }
+html.w2p-dark [class~="border-[#94a3b8]"] { border-color: #555560 !important; }
+html.w2p-dark [class~="border-[#0f172a]"] { border-color: #696971 !important; }
+html.w2p-dark [class~="border-[#bbf7d0]"] { border-color: #2d694a !important; }
+html.w2p-dark [class~="border-[#fecaca]"] { border-color: #823d4c !important; }
+html.w2p-dark [class~="border-[#99f6e4]"] { border-color: #1c6b5a !important; }
+html.w2p-dark input, html.w2p-dark select, html.w2p-dark textarea { color-scheme: dark; }
+html.w2p-dark input::placeholder, html.w2p-dark textarea::placeholder { color: #71717a !important; }
+html.w2p-dark [data-member-chip="true"] { background-color: #252529 !important; color: #fafafa !important; }
+html.w2p-dark [class~="text-white"] { color: #ffffff !important; }
+html.w2p-dark [class~="bg-[#0f172a]"] { background: #27272a !important; }
+html.w2p-dark :focus-visible { outline-color: #2dd4bf; }

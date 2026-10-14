@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTheme } from '../hooks/useTheme';
 import { Link, useParams } from 'react-router-dom';
 import { getRoomData, normalizeRoomData, saveRoomData } from '../utils/storage';
 import { calculateFinancials, transfersForExpense } from '../utils/settlement';
@@ -16,12 +17,16 @@ import {
   ClipboardPaste,
   FileSpreadsheet,
   FileText,
+  SlidersHorizontal,
   Pencil,
   Plus,
   Search,
   Trash2,
   Users,
   Wallet,
+  Moon,
+  Sun,
+  Monitor,
   X,
 } from 'lucide-react';
 
@@ -59,6 +64,28 @@ const formatCurrency = (value, currency = 'PHP') => {
     style: 'currency', currency: code, minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(Number(value) || 0);
 };
+// Separate date/time controls avoid overflowing native datetime-local fields on iOS.
+function DateTimeFields({ idBase, value, onChange }) {
+  const date = value?.slice(0, 10) || '';
+  const time = value?.slice(11, 16) || '00:00';
+  return (
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] gap-2">
+      <div className="min-w-0">
+        <label htmlFor={`${idBase}-date`} className="mb-1 block text-xs text-[#64748b]">Date</label>
+        <input id={`${idBase}-date`} type="date" required value={date}
+          onChange={(event) => onChange(`${event.target.value}T${time}`)}
+          className={`${fieldClass} block w-full min-w-0 max-w-full !px-2 sm:!px-3 `} />
+      </div>
+      <div className="min-w-0">
+        <label htmlFor={`${idBase}-time`} className="mb-1 block text-xs text-[#64748b]">Time</label>
+        <input id={`${idBase}-time`} type="time" required value={time}
+          onChange={(event) => onChange(`${date}T${event.target.value}`)}
+          className={`${fieldClass} block w-full min-w-0 max-w-full !px-2 sm:!px-3 `} />
+      </div>
+    </div>
+  );
+}
+
 const fieldClass = 'w-full min-w-0 rounded-lg border border-[#cbd5e1] bg-white px-3 py-2.5 text-sm text-[#0f172a] outline-none transition placeholder:text-[#94a3b8] focus:border-[#0f766e] focus:ring-2 focus:ring-[#ccfbf1]';
 const primaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg bg-[#0f766e] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#115e59] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f766e] disabled:cursor-not-allowed disabled:opacity-50';
 const secondaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg border border-[#cbd5e1] bg-white px-3 py-2 text-sm font-medium text-[#334155] transition hover:bg-[#f1f5f9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0f766e] disabled:cursor-not-allowed disabled:opacity-50';
@@ -108,7 +135,7 @@ function MemberTag({ name, colors, small = false }) {
   return (
     <span
       className={`inline-flex max-w-full items-center gap-1.5 rounded-md border font-medium ${small ? 'px-1.5 py-0.5 text-xs' : 'px-2.5 py-1 text-sm'}`}
-      style={tagStyle(name, colors)}
+      style={tagStyle(name, colors)} data-member-chip='true'
     >
       <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: memberColor(name, colors) }} aria-hidden="true" />
       <span className="truncate">{name}</span>
@@ -143,7 +170,26 @@ const fileSlug = (value) =>
   (String(value || 'room').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) || 'room');
 
 
+function ThemeSelector({ theme, setTheme, resolvedTheme }) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-lg border border-[#cbd5e1] bg-white p-1" role="group" aria-label="Appearance">
+      {[
+        { value: 'light', label: 'Light theme', Icon: Sun },
+        { value: 'dark', label: 'Dark theme', Icon: Moon },
+        { value: 'system', label: 'Use system theme', Icon: Monitor },
+      ].map(({ value, label, Icon }) => (
+        <button key={value} type="button" onClick={() => setTheme(value)}
+          aria-label={label} aria-pressed={theme === value} title={label}
+          className={`rounded-md p-1.5 transition ${theme === value ? 'bg-[#0f766e] text-white' : 'text-[#64748b] hover:bg-[#f1f5f9]'}`}>
+          <Icon className="h-4 w-4" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export default function Room() {
+  const { theme, setTheme, resolvedTheme } = useTheme();
   const { roomId } = useParams();
   const formRef = useRef(null);
 
@@ -195,6 +241,7 @@ export default function Room() {
   const [searchQuery, setSearchQuery] = useState('');
   const [memberFilter, setMemberFilter] = useState('ALL');
   const [typeFilter, setTypeFilter] = useState('EXPENSE');
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [importOpen, setImportOpen] = useState(false);
@@ -754,6 +801,7 @@ export default function Room() {
     return (
       <div className="flex min-h-screen flex-col bg-[#f7f6f3] font-sans text-[#0f172a]">
         <header className="border-b border-[#e6e3dc] bg-white px-6 py-4">
+          <div className="flex justify-end"><ThemeSelector theme={theme} setTheme={setTheme} resolvedTheme={resolvedTheme} /></div>
           <Link to="/" className="mx-auto flex max-w-5xl items-center gap-2 text-lg font-semibold tracking-tight">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#0f766e] text-white"><Wallet className="h-5 w-5" /></span>
             Who2Pay<span className="text-[#0f766e]">.</span>
@@ -884,6 +932,7 @@ export default function Room() {
               className="min-w-0 max-w-[146px] rounded-lg border border-[#cbd5e1] bg-white px-1.5 py-2 text-xs font-medium sm:max-w-none sm:px-2 sm:text-sm text-[#334155] focus:border-[#0f766e] focus:outline-none disabled:opacity-50">
               {CURRENCIES.map(({ code, label }) => <option key={code} value={code}>{label}</option>)}
             </select>
+            <ThemeSelector theme={theme} setTheme={setTheme} resolvedTheme={resolvedTheme} />
             <button type="button" onClick={copyRoomLink} className={secondaryButton}>
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               <span>{copied ? 'Copied' : 'Share'}</span>
@@ -996,7 +1045,7 @@ export default function Room() {
                     </div>
                     <div>
                       <label htmlFor="datetime" className="mb-2 block text-sm font-semibold text-[#334155]">Date and time</label>
-                      <input id="datetime" type="datetime-local" required value={datetime} onChange={(event) => setDatetime(event.target.value)} className={fieldClass} />
+                      <DateTimeFields idBase="expense" value={datetime} onChange={setDatetime} />
                     </div>
                   </div>
                 ) : (
@@ -1019,7 +1068,7 @@ export default function Room() {
                     </div>
                     <div>
                       <label htmlFor="multi-datetime" className="mb-2 block text-sm font-semibold text-[#334155]">Date and time</label>
-                      <input id="multi-datetime" type="datetime-local" required value={datetime} onChange={(event) => setDatetime(event.target.value)} className={fieldClass} />
+                      <DateTimeFields idBase="multi-expense" value={datetime} onChange={setDatetime} />
                     </div>
                   </div>
                 )}
@@ -1116,10 +1165,10 @@ export default function Room() {
               {importOpen && (
                 <div className="space-y-3 border-b border-[#e6e3dc] bg-[#faf9f6] px-3 py-3 sm:px-6 sm:py-5">
                   <div>
-                    <h3 className="text-sm font-semibold text-[#0f172a]">Paste transactions from Google Sheets</h3>
-                    <p className="mt-1 text-xs text-[#64748b]">Copy four columns: Description | Amount | Paid By | Split Between. Tabs, CSV, and Markdown tables are supported. Dates default to import time.</p>
+                    <h3 className="text-sm font-semibold text-[#0f172a]">Import transactions from a table</h3>
+                    <p className="mt-1 text-xs text-[#64748b]">Paste four columns: Description | Amount | Paid By | Split Between. Supports spreadsheet cells, CSV, or Markdown tables. Each imported transaction uses the import date.</p>
                   </div>
-                  <textarea rows={7} value={importText} onChange={(event) => setImportText(event.target.value)} className={`${fieldClass} font-mono text-xs`} placeholder={'Description\tAmount\tPaid By\tSplit Between\nGigantes (regular)\t6150\tXB\tAchi, Wil, Eri'} aria-label="Paste transaction table" />
+                  <textarea rows={7} value={importText} onChange={(event) => setImportText(event.target.value)} className={`${fieldClass} font-mono text-xs`} placeholder={'Description\tAmount\tPaid By\tSplit Between\nTeam lunch\t1200.00\tAlex\tAlex, Jamie, Sam\nTaxi fare\t450.00\tSam\tAlex, Sam'} aria-label="Paste transaction table" />
                   {importText.trim() && (
                     <div className="space-y-2 text-xs">
                       <p className="font-semibold text-[#334155]">Preview: {importPreview.transactions.length} valid of {importPreview.rowCount} rows</p>
@@ -1142,32 +1191,46 @@ export default function Room() {
                 </div>
               )}
               {importMessage && <p role="status" className="border-b border-[#e6e3dc] px-5 py-3 text-sm text-[#0f766e]">{importMessage}</p>}
-              <div className="space-y-3 border-b border-[#e6e3dc] px-3 py-3 sm:px-6 sm:py-4">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
-                  <input type="search" aria-label="Search transactions" placeholder="Search descriptions or members" value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)} className={`${fieldClass} pl-9`} />
+              <div className="border-b border-[#e6e3dc] px-3 py-3 sm:px-6 sm:py-4">
+                <div className="flex items-center gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
+                    <input type="search" aria-label="Search transactions" placeholder="Search transactions" value={searchQuery}
+                      onChange={(event) => setSearchQuery(event.target.value)} className={`${fieldClass} pl-9`} />
+                  </div>
+                  <button type="button" aria-label="Toggle transaction filters" title="Filters"
+                    aria-expanded={filtersOpen} aria-controls="transaction-filters"
+                    onClick={() => setFiltersOpen((open) => !open)}
+                    className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition ${filtersOpen || hasFilters ? 'border-[#0f766e] bg-[#f0fdfa] text-[#0f766e]' : 'border-[#cbd5e1] bg-white text-[#475569] hover:bg-[#f8fafc]'}`}>
+                    <SlidersHorizontal className="h-4 w-4" />
+                    {hasFilters && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[#0f766e]" />}
+                  </button>
                 </div>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <select aria-label="Filter by member" value={memberFilter} onChange={(event) => setMemberFilter(event.target.value)} className={fieldClass}>
-                    <option value="ALL">All members</option>
-                    {room.members.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                  <select aria-label="Filter by transaction type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className={fieldClass}>
-                    <option value="ALL">All transactions</option>
-                    <option value="EXPENSE">Expenses only</option>
-                    <option value="SETTLEMENT">Settlements only</option>
-                  </select>
-                  <label className="flex items-center gap-2 text-xs text-[#64748b]">
-                    <span className="w-10 shrink-0">From</span>
-                    <input type="date" aria-label="Start date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className={fieldClass} />
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-[#64748b]">
-                    <span className="w-10 shrink-0">To</span>
-                    <input type="date" aria-label="End date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className={fieldClass} />
-                  </label>
-                </div>
-                {hasFilters && <button type="button" onClick={clearFilters} className="inline-flex items-center gap-1 text-xs font-semibold text-[#0f766e] hover:underline"><X className="h-3.5 w-3.5" /> Clear filters</button>}
+                {filtersOpen && (
+                  <div id="transaction-filters" className="mt-3 space-y-3 rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-3">
+                    <div className="grid min-w-0 gap-2 sm:grid-cols-2">
+                      <select aria-label="Filter by member" value={memberFilter} onChange={(event) => setMemberFilter(event.target.value)} className={fieldClass}>
+                        <option value="ALL">All members</option>
+                        {room.members.map((name) => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                      <select aria-label="Filter by transaction type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className={fieldClass}>
+                        <option value="ALL">All transactions</option>
+                        <option value="EXPENSE">Expenses only</option>
+                        <option value="SETTLEMENT">Settlements only</option>
+                      </select>
+                      <label className="min-w-0 text-xs text-[#64748b]">From
+                        <input type="date" aria-label="Start date" value={startDate} onChange={(event) => setStartDate(event.target.value)} className={`${fieldClass} mt-1 block max-w-full `} />
+                      </label>
+                      <label className="min-w-0 text-xs text-[#64748b]">To
+                        <input type="date" aria-label="End date" value={endDate} onChange={(event) => setEndDate(event.target.value)} className={`${fieldClass} mt-1 block max-w-full `} />
+                      </label>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <button type="button" onClick={clearFilters} disabled={!hasFilters} className="text-xs font-semibold text-[#0f766e] hover:underline disabled:opacity-40">Reset to expenses only</button>
+                      <button type="button" onClick={() => setFiltersOpen(false)} className="text-xs font-medium text-[#475569] hover:underline">Done</button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {!filteredExpenses.length ? (
@@ -1252,6 +1315,39 @@ export default function Room() {
 
           <aside className="min-w-0 space-y-4 sm:space-y-6">
             <section className={cardClass}>
+              <CardHeading title="Balances" subtitle="Positive means they should receive money; negative means they owe. Any member can record a completed payment." />
+              <div className="space-y-2 p-3 sm:space-y-3 sm:p-6">
+                {room.members.map((name) => {
+                  const balance = balances[name] || 0;
+                  return (
+                    <div key={name} className="rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-3.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <MemberTag name={name} colors={colors} small />
+                        <span className={`text-sm font-semibold ${balance > 0.01 ? 'text-[#047857]' : balance < -0.01 ? 'text-[#be123c]' : 'text-[#64748b]'}`}>
+                          {balance > 0.01 ? '+' : balance < -0.01 ? '−' : ''}{formatAmount(Math.abs(balance))}
+                        </span>
+                      </div>
+                      {settlements.filter((item) => item.from === name).map((item, index) => (
+                        <div key={`${item.from}:${item.to}:${index}`} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#d5e3de] bg-white px-3 py-2">
+                          <span className="text-xs text-[#475569]">
+                            <strong className="text-[#0f172a]">{item.from}</strong> pays <strong className="text-[#0f172a]">{item.to}</strong>
+                            <strong className="ml-2 text-[#0f172a]">{formatAmount(item.amount)}</strong>
+                          </span>
+                          {settleAction(item, item.to === currentUser ? 'Received' : 'Settle')}
+                        </div>
+                      ))}
+                      <div className="mt-2 flex flex-wrap justify-between gap-2 border-t border-[#e6e3dc] pt-2 text-xs text-[#64748b]">
+                        <span>Paid: {formatAmount(totalPaid[name])}</span>
+                        <span>Share: {formatAmount(totalShare[name])}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+
+            <section className={cardClass}>
               <CardHeading title={`Members (${room.members.length})`} subtitle="Assign colors to recognize people across the room." />
               <div className="p-3 sm:p-6">
                 {colorNotice && <p role="status" className="mb-3 rounded-md border border-[#e4dccb] bg-[#faf7ef] px-3 py-2 text-xs text-[#6b5e45]">{colorNotice}</p>}
@@ -1313,38 +1409,6 @@ export default function Room() {
                     </div>
                   ))}
                 </div>
-              </div>
-            </section>
-
-            <section className={cardClass}>
-              <CardHeading title="Balances" subtitle="Positive means they should receive money; negative means they owe. Any member can record a completed payment." />
-              <div className="space-y-2 p-3 sm:space-y-3 sm:p-6">
-                {room.members.map((name) => {
-                  const balance = balances[name] || 0;
-                  return (
-                    <div key={name} className="rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-3.5">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <MemberTag name={name} colors={colors} small />
-                        <span className={`text-sm font-semibold ${balance > 0.01 ? 'text-[#047857]' : balance < -0.01 ? 'text-[#be123c]' : 'text-[#64748b]'}`}>
-                          {balance > 0.01 ? '+' : balance < -0.01 ? '−' : ''}{formatAmount(Math.abs(balance))}
-                        </span>
-                      </div>
-                      {settlements.filter((item) => item.from === name).map((item, index) => (
-                        <div key={`${item.from}:${item.to}:${index}`} className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#d5e3de] bg-white px-3 py-2">
-                          <span className="text-xs text-[#475569]">
-                            <strong className="text-[#0f172a]">{item.from}</strong> pays <strong className="text-[#0f172a]">{item.to}</strong>
-                            <strong className="ml-2 text-[#0f172a]">{formatAmount(item.amount)}</strong>
-                          </span>
-                          {settleAction(item, item.to === currentUser ? 'Received' : 'Settle')}
-                        </div>
-                      ))}
-                      <div className="mt-2 flex flex-wrap justify-between gap-2 border-t border-[#e6e3dc] pt-2 text-xs text-[#64748b]">
-                        <span>Paid: {formatAmount(totalPaid[name])}</span>
-                        <span>Share: {formatAmount(totalShare[name])}</span>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             </section>
 
