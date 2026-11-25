@@ -11,7 +11,7 @@ import {
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
-import { formatDate, todayIsoDate, toIsoDate } from '../utils/formatDate';
+import { formatCompactDate, formatDate, todayIsoDate, toIsoDate } from '../utils/formatDate';
 import { repaymentsForExpense } from '../utils/settlement';
 import { getExpenseShares } from '../utils/splitShares';
 import { EXPORT_HEADERS, TABLE_HEADERS, exportRowForTransaction, parseImportedTransactions, tableRowForTransaction, getPayers } from '../utils/tableTransactions';
@@ -135,7 +135,12 @@ export default function TransactionList({
     const renderPills = (limit) => (
       <>
         {orderedNames.slice(0, limit).map((name) => (
-          <MemberTag key={name} name={name} colors={colors} small />
+          <div
+            key={name}
+            className={orderedNames.length > limit ? 'min-w-0 shrink overflow-hidden' : 'shrink-0'}
+          >
+            <MemberTag name={name} colors={colors} small />
+          </div>
         ))}
         {orderedNames.length > limit && (
           <button type="button" onClick={openBreakdown} title={breakdown} className={`${breakdownButtonClass} shrink-0`}>
@@ -252,17 +257,17 @@ export default function TransactionList({
     const complete = repayments.length > 0 && paidCount === repayments.length;
     const lockedByPayment = repayments.some((item) => item.paid);
     const settlementControl = !expense.isSettlement && complete
-      ? <span role="status" className="inline-flex min-h-[34px] items-center rounded-full border border-[#bbf7d0] bg-[#f0fdf4] px-2.5 text-[11px] font-semibold text-[#166534]">Settled</span>
+      ? <span role="status" className="inline-flex min-h-[34px] items-center rounded-full border border-[#bbf7d0] bg-[#f0fdf4] px-2.5 text-[11px] font-semibold text-[#166534] md:min-h-[28px] md:px-1 md:text-[10px]">Settled</span>
       : !expense.isSettlement
         ? (
           <button
             type="button"
             onClick={() => openExpenseSettlement(expense)}
             disabled={settlingKey !== null || !repayments.length}
-            title={!repayments.length ? 'No repayments needed' : 'Settle this individual transaction'}
-            className="inline-flex min-h-[34px] items-center rounded-full border border-[#99f6e4] bg-[#f0fdfa] px-2.5 text-[11px] font-semibold text-[#0f766e] transition hover:bg-[#ccfbf1] disabled:opacity-50"
+            title={!repayments.length ? 'No repayments needed' : `Settle this individual transaction${paidCount ? ` (${paidCount}/${repayments.length} payments recorded)` : ''}`}
+            className="inline-flex min-h-[34px] min-w-[64px] items-center justify-center whitespace-nowrap rounded-full border border-[#99f6e4] bg-[#f0fdfa] px-3.5 py-1 text-[11px] font-semibold text-[#0f766e] transition hover:bg-[#ccfbf1] disabled:opacity-50 md:min-h-[28px] md:text-[10px]"
           >
-            {paidCount ? `Settle (${paidCount}/${repayments.length})` : 'Settle'}
+            Settle
           </button>
         )
         : null;
@@ -271,18 +276,38 @@ export default function TransactionList({
       setMobileMenuExpenseId(null);
       action();
     };
+    const moreActionsMenu = (
+      <div role="menu" className="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-lg border border-[#e6e3dc] bg-white p-1 shadow-lg">
+        <button type="button" role="menuitem" onClick={() => closeMenu(() => setViewingExpenseId(expense.id))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9]">
+          <Eye className="h-4 w-4" /> View details
+        </button>
+        {!expense.isSettlement && paidCount > 0 && (
+          <button type="button" role="menuitem" disabled={settlingKey !== null} onClick={() => closeMenu(() => onUndoPayments(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9] disabled:opacity-50">
+            Undo settlement
+          </button>
+        )}
+        {!expense.isSettlement && (
+          <button type="button" role="menuitem" disabled={lockedByPayment} onClick={() => closeMenu(() => onEdit(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9] disabled:opacity-50">
+            <Pencil className="h-4 w-4" /> Edit
+          </button>
+        )}
+        <button type="button" role="menuitem" onClick={() => closeMenu(() => onDelete(expense.id))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#be123c] hover:bg-[#fff1f2]">
+          <Trash2 className="h-4 w-4" /> Delete
+        </button>
+      </div>
+    );
 
     return (
       <>
-        <div className="hidden items-center gap-0.5 sm:gap-1 md:flex">
+        <div className="hidden items-center gap-0.5 md:flex">
           <button
             type="button"
             onClick={() => setViewingExpenseId(expense.id)}
             aria-label="View details"
             title="View details"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#64748b] transition hover:bg-[#f0fdfa] hover:text-[#0f766e]"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#64748b] transition hover:bg-[#f0fdfa] hover:text-[#0f766e]"
           >
-            <Eye className="h-4 w-4" />
+            <Eye className="h-3.5 w-3.5" />
           </button>
           {settlementControl}
           {!expense.isSettlement && paidCount > 0 && (
@@ -292,21 +317,20 @@ export default function TransactionList({
               disabled={settlingKey !== null}
               title="Undo recorded payments for this transaction"
               aria-label={`Undo settlement for ${expense.desc}`}
-              className="inline-flex min-h-[34px] items-center rounded-md px-2 text-[11px] font-semibold text-[#64748b] hover:bg-[#f1f5f9] disabled:opacity-50"
+              className="inline-flex min-h-[28px] shrink-0 items-center rounded-md px-0.5 text-[10px] font-semibold text-[#64748b] hover:bg-[#f1f5f9] disabled:opacity-50"
             >
               Undo
             </button>
           )}
-          {!expense.isSettlement && (
+          {!expense.isSettlement && !lockedByPayment && (
             <button
               type="button"
               onClick={() => onEdit(expense)}
-              disabled={lockedByPayment}
-              title={lockedByPayment ? 'Remove linked repayments before editing' : 'Edit transaction'}
+              title="Edit transaction"
               aria-label={`Edit ${expense.desc}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#64748b] transition hover:bg-[#f0fdfa] hover:text-[#0f766e] disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#64748b] transition hover:bg-[#f0fdfa] hover:text-[#0f766e]"
             >
-              <Pencil className="h-4 w-4" />
+              <Pencil className="h-3.5 w-3.5" />
             </button>
           )}
           <button
@@ -314,9 +338,9 @@ export default function TransactionList({
             onClick={() => onDelete(expense.id)}
             title="Delete transaction"
             aria-label={`Delete ${expense.desc}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-[#64748b] transition hover:bg-[#fff1f2] hover:text-[#be123c]"
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#64748b] transition hover:bg-[#fff1f2] hover:text-[#be123c]"
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
         <div className="relative flex items-center gap-1 md:hidden">
@@ -331,26 +355,7 @@ export default function TransactionList({
           >
             <MoreHorizontal className="h-5 w-5" />
           </button>
-          {String(mobileMenuExpenseId) === String(expense.id) && (
-            <div role="menu" className="absolute right-0 top-full z-30 mt-1 min-w-40 rounded-lg border border-[#e6e3dc] bg-white p-1 shadow-lg">
-              <button type="button" role="menuitem" onClick={() => closeMenu(() => setViewingExpenseId(expense.id))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9]">
-                <Eye className="h-4 w-4" /> View details
-              </button>
-              {!expense.isSettlement && paidCount > 0 && (
-                <button type="button" role="menuitem" disabled={settlingKey !== null} onClick={() => closeMenu(() => onUndoPayments(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9] disabled:opacity-50">
-                  Undo settlement
-                </button>
-              )}
-              {!expense.isSettlement && (
-                <button type="button" role="menuitem" disabled={lockedByPayment} onClick={() => closeMenu(() => onEdit(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9] disabled:opacity-50">
-                  <Pencil className="h-4 w-4" /> Edit
-                </button>
-              )}
-              <button type="button" role="menuitem" onClick={() => closeMenu(() => onDelete(expense.id))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#be123c] hover:bg-[#fff1f2]">
-                <Trash2 className="h-4 w-4" /> Delete
-              </button>
-            </div>
-          )}
+          {String(mobileMenuExpenseId) === String(expense.id) && moreActionsMenu}
         </div>
       </>
     );
@@ -503,42 +508,43 @@ export default function TransactionList({
       ) : (
         <>
           <div className="hidden overflow-x-auto md:block">
-            <div role="table" aria-label="Transactions" className="transaction-grid min-w-[700px] text-left text-xs">
+            <div role="table" aria-label="Transactions" className="transaction-grid text-left text-xs">
               <div role="rowgroup">
                 <div role="row" className="transaction-grid-row transaction-grid-header bg-[#faf9f6] text-[#64748b]">
-                  <div role="columnheader" className="px-3 py-2.5 font-semibold">Date</div>
-                  <div role="columnheader" className="px-3 py-2.5 font-semibold">Transaction</div>
-                  <div role="columnheader" className="px-3 py-2.5 font-semibold">Paid by</div>
-                  <div role="columnheader" className="min-w-0 overflow-hidden px-3 py-2.5 font-semibold">Split between</div>
+                  <div role="columnheader" className="py-2.5 font-semibold">Date</div>
+                  <div role="columnheader" className="py-2.5 font-semibold">Transaction</div>
+                  <div role="columnheader" className="py-2.5 font-semibold">Paid by</div>
+                  <div role="columnheader" className="min-w-0 overflow-hidden py-2.5 font-semibold">Split between</div>
                   <div role="columnheader" className="transaction-grid-amount py-2.5 font-semibold">Amount</div>
-                  <div role="columnheader" className="px-2 py-2.5 text-right font-semibold">Actions</div>
+                  <div role="columnheader" className="py-2.5 text-right font-semibold">Actions</div>
                 </div>
               </div>
               <div role="rowgroup">
                 {filteredExpenses.map((expense) => {
                   const settled = isExpenseSettled(expense);
+                  const fullDate = formatDate(expense.datetime);
                   return (
                   <div
                     role="row"
                     key={expense.id}
                     className={`transaction-grid-row align-center border-b border-[#e2e8f0] transition ${expense.isSettlement ? 'bg-[#eef6f9] hover:bg-[#e4f0f5]' : settled ? 'bg-[#f0fdf4] text-[#64748b] hover:bg-[#ecfdf5]' : 'bg-white hover:bg-[#faf9f6]'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}
                   >
-                    <div role="cell" className="min-w-0 px-3 py-2.5 text-[#64748b]">{formatDate(expense.datetime) || '—'}</div>
-                    <div role="cell" className="min-w-0 px-3 py-2.5">
+                    <div role="cell" title={fullDate || undefined} className="min-w-0 py-2.5 text-[#64748b]">{formatCompactDate(expense.datetime) || '—'}</div>
+                    <div role="cell" className="min-w-0 py-2.5">
                       <div className={`break-words font-semibold ${settled ? 'text-[#64748b]' : 'text-[#0f172a]'}`}>{expense.desc}</div>
                     </div>
-                    <div role="cell" className="min-w-0 overflow-hidden px-3 py-2.5">
+                    <div role="cell" className="min-w-0 overflow-hidden py-2.5">
                       <div className="flex min-w-0 flex-nowrap gap-1 overflow-hidden">
                         {getPayers(expense).map((payer, index) => <MemberTag key={`${payer.member}-${index}`} name={payer.member} colors={colors} small />)}
                       </div>
                     </div>
-                    <div role="cell" className="min-w-0 overflow-hidden px-3 py-2.5">
+                    <div role="cell" className="min-w-0 overflow-hidden py-2.5">
                       <div className="min-w-0 overflow-hidden">
                         {renderSplitMembers(expense)}
                       </div>
                     </div>
                     <div role="cell" className={`transaction-grid-amount py-2.5 font-bold ${settled ? 'text-[#64748b]' : 'text-[#0f172a]'}`}>{formatAmount(expense.amount)}</div>
-                    <div role="cell" className="min-w-0 px-2 py-2"><div className="flex justify-end">{actionsFor(expense)}</div></div>
+                    <div role="cell" className="min-w-0 py-2"><div className="flex justify-end">{actionsFor(expense)}</div></div>
                   </div>
                   );
                 })}

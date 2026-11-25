@@ -1,5 +1,6 @@
 const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})/;
 const SLASH_DATE = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/(\d{4})$/;
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function isRealDate(year, month, day) {
   const date = new Date(year, month - 1, day);
@@ -44,6 +45,13 @@ export function formatDate(value) {
   const parts = parseDateParts(value);
   if (!parts) return '';
   return `${pad(parts.month)}/${pad(parts.day)}/${parts.year}`;
+}
+
+/** Compact month and day label for dense transaction rows. */
+export function formatCompactDate(value) {
+  const parts = parseDateParts(value);
+  if (!parts) return '';
+  return `${MONTH_NAMES[parts.month - 1]} ${parts.day}`;
 }
 
 /** YYYY-MM-DD used by date inputs, sorting, and stored room dates. */

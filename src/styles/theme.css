@@ -56,6 +56,15 @@ html.w2p-dark [class~="text-white"] { color: #ffffff !important; }
 html.w2p-dark [class~="bg-[#0f172a]"] { background: #27272a !important; }
 html.w2p-dark :focus-visible { outline-color: #2dd4bf; }
 
+@media (max-width: 767px) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 /* Dark-mode transaction separators: Tailwind divide-y applies borders to siblings,
    so overriding border-* utility classes alone does not affect these lines. */
 html.w2p-dark .transaction-mobile-list > :not([hidden]) ~ :not([hidden]) {
@@ -68,8 +77,20 @@ html.w2p-dark .transaction-mobile-list > article { border-left: 0 !important; }
 
 .transaction-grid-row {
   display: grid;
-  grid-template-columns: minmax(96px, 0.7fr) minmax(100px, 1.25fr) minmax(80px, 1fr) minmax(0, 1fr) max-content max-content;
+  grid-template-columns: 64px minmax(110px, 1.2fr) 92px minmax(175px, 1.4fr) 92px 136px;
+  column-gap: 10px;
   align-items: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.transaction-grid {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .transaction-grid-header {
@@ -77,9 +98,8 @@ html.w2p-dark .transaction-mobile-list > article { border-left: 0 !important; }
 }
 
 .transaction-grid-amount {
-  min-width: max-content;
-  padding-left: 16px;
-  padding-right: 12px;
+  padding-left: 12px;
+  padding-right: 8px;
   text-align: right;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
