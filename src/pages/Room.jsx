@@ -638,6 +638,7 @@ export default function Room() {
               members={members}
               expenses={expenses}
               colors={colors}
+              currentUser={currentUser}
               editingExpenseId={editingExpenseId}
               formatAmount={formatAmount}
               settlingKey={settlingKey}

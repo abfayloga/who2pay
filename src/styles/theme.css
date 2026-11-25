@@ -65,3 +65,31 @@ html.w2p-dark .transaction-mobile-list > :not([hidden]) ~ :not([hidden]) {
 
 /* Mobile transactions distinguish types with backgrounds, not side bars. */
 html.w2p-dark .transaction-mobile-list > article { border-left: 0 !important; }
+
+.transaction-grid-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 0.7fr) minmax(100px, 1.25fr) minmax(80px, 1fr) minmax(0, 1fr) max-content max-content;
+  align-items: center;
+}
+
+.transaction-grid-header {
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.transaction-grid-amount {
+  min-width: max-content;
+  padding-left: 16px;
+  padding-right: 12px;
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.transaction-grid-row > [role="cell"],
+.transaction-grid-row > [role="columnheader"] {
+  min-width: 0;
+}
+
+html.w2p-dark .transaction-grid-header {
+  border-bottom-color: #303036;
+}
