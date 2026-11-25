@@ -17,6 +17,7 @@ function createFormState(expense, members, currentUser) {
   if (!expense) {
     return {
       desc: '',
+      notes: '',
       amount: '',
       payerMode: 'single',
       paidBy: currentUser || members[0] || '',
@@ -33,6 +34,7 @@ function createFormState(expense, members, currentUser) {
   const multiple = payers.length > 1;
   return {
     desc: expense.desc || '',
+    notes: expense.notes || '',
     amount: multiple ? '' : String(expense.amount ?? ''),
     payerMode: multiple ? 'multiple' : 'single',
     paidBy: multiple ? (currentUser || members[0] || '') : (payers[0]?.member || currentUser || members[0] || ''),
@@ -59,6 +61,7 @@ const ExpenseForm = forwardRef(function ExpenseForm({
 }, ref) {
   const initial = createFormState(expense, members, currentUser);
   const [desc, setDesc] = useState(initial.desc);
+  const [notes, setNotes] = useState(initial.notes);
   const [amount, setAmount] = useState(initial.amount);
   const [payerMode, setPayerMode] = useState(initial.payerMode);
   const [paidBy, setPaidBy] = useState(initial.paidBy);
@@ -111,6 +114,7 @@ const ExpenseForm = forwardRef(function ExpenseForm({
 
   const clearNewExpenseFields = () => {
     setDesc('');
+    setNotes('');
     setAmount('');
     setPayerShares({});
     setSplitMethod('equal');
@@ -174,6 +178,7 @@ const ExpenseForm = forwardRef(function ExpenseForm({
 
     const payload = {
       desc: desc.trim() || 'General Expense',
+      notes: notes.trim(),
       amount: finalAmount,
       paidBy: finalPayers.length === 1 ? finalPayers[0].member : `${finalPayers.length} payers`,
       payers: finalPayers,
@@ -212,10 +217,10 @@ const ExpenseForm = forwardRef(function ExpenseForm({
           </div>
         )}
       />
-      <form onSubmit={handleSubmit} className="space-y-3 p-3 sm:space-y-5 sm:p-6">
-        <div className="grid gap-4 sm:grid-cols-2">
+      <form onSubmit={handleSubmit} className="space-y-3 p-3 sm:space-y-4 sm:p-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           <div className={payerMode === 'multiple' ? 'sm:col-span-2' : ''}>
-            <label htmlFor="description" className="mb-2 block text-sm font-semibold text-[#334155]">Description</label>
+            <label htmlFor="description" className="mb-1.5 block text-xs font-semibold text-[#334155]">Description</label>
             <input
               id="description"
               type="text"
@@ -229,7 +234,7 @@ const ExpenseForm = forwardRef(function ExpenseForm({
           </div>
           {payerMode === 'single' && (
             <div>
-              <label htmlFor="amount" className="mb-2 block text-sm font-semibold text-[#334155]">Amount ({currency})</label>
+              <label htmlFor="amount" className="mb-1.5 block text-xs font-semibold text-[#334155]">Amount ({currency})</label>
               <input
                 id="amount"
                 type="text"
@@ -251,11 +256,23 @@ const ExpenseForm = forwardRef(function ExpenseForm({
             </div>
           )}
         </div>
+        <div>
+          <label htmlFor="expense-notes" className="mb-1.5 block text-xs font-semibold text-[#334155]">Notes / Receipt link <span className="font-normal text-[#64748b]">(optional)</span></label>
+          <textarea
+            id="expense-notes"
+            rows={1}
+            maxLength={500}
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Add a note or receipt link"
+            className={fieldClass}
+          />
+        </div>
 
         {payerMode === 'single' ? (
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <label htmlFor="paid-by" className="mb-2 block text-sm font-semibold text-[#334155]">Paid by</label>
+              <label htmlFor="paid-by" className="mb-1.5 block text-xs font-semibold text-[#334155]">Paid by</label>
               <select id="paid-by" value={paidBy} onChange={(event) => setPaidBy(event.target.value)} className={fieldClass}>
                 {members.map((name) => <option key={name} value={name}>{name}</option>)}
               </select>
@@ -263,12 +280,12 @@ const ExpenseForm = forwardRef(function ExpenseForm({
             <DateField id="expense-date" label="Date" value={date} onChange={setDate} required />
           </div>
         ) : (
-          <div className="space-y-4 rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-4">
+          <div className="space-y-3 rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-sm font-semibold text-[#334155]">How much did each person pay?</p>
-              <span className="text-sm font-bold text-[#0f766e]">Total: {formatAmount(multiplePayersTotal)}</span>
+              <span className="text-sm font-bold tabular-nums text-[#0f766e]">Total: {formatAmount(multiplePayersTotal)}</span>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-2">
               {members.map((name) => (
                 <label key={name} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-[#e6e3dc] bg-white p-2.5">
                   <MemberTag name={name} colors={colors} small />
@@ -279,7 +296,7 @@ const ExpenseForm = forwardRef(function ExpenseForm({
                     value={payerShares[name] || ''}
                     onChange={(event) => setPayerShares((current) => ({ ...current, [name]: event.target.value }))}
                     aria-label={`Amount or calculation paid by ${name}`}
-                    className="w-24 shrink-0 rounded-md border border-[#cbd5e1] px-2 py-1.5 text-right text-sm outline-none focus:border-[#0f766e]"
+                    className="w-24 shrink-0 rounded-md border border-[#cbd5e1] px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:border-[#0f766e]"
                   />
                 </label>
               ))}
@@ -288,8 +305,8 @@ const ExpenseForm = forwardRef(function ExpenseForm({
           </div>
         )}
 
-        <div className="space-y-3 rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-3 sm:p-4">
-          <label className="block text-sm font-semibold text-[#334155]" htmlFor="split-method">Split method</label>
+        <div className="space-y-2.5 rounded-lg border border-[#e6e3dc] bg-[#faf9f6] p-3">
+          <label className="block text-xs font-semibold text-[#334155]" htmlFor="split-method">Split method</label>
           <select id="split-method" value={splitMethod} onChange={(event) => setSplitMethod(event.target.value)} className={fieldClass}>
             <option value="equal">Equal split</option>
             <option value="custom">Custom amounts</option>
@@ -425,9 +442,13 @@ const ExpenseForm = forwardRef(function ExpenseForm({
 
         {splitMethod !== 'items' && (
           <fieldset>
-            <legend className="mb-2 text-sm font-semibold text-[#334155]">
+            <legend className="text-xs font-semibold text-[#334155]">
               Split between <span className="font-normal text-[#64748b]">({splitWith.length} selected)</span>
             </legend>
+            <div className="mb-1.5 flex justify-end gap-3 text-xs font-semibold">
+              <button type="button" onClick={() => setSplitWith([...members])} className="text-[#0f766e] hover:underline">Select All</button>
+              <button type="button" onClick={() => setSplitWith([])} className="text-[#64748b] hover:underline">Clear</button>
+            </div>
             <div className="flex flex-wrap gap-2">
               {members.map((name) => {
                 const selected = splitWith.includes(name);

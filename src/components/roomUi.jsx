@@ -17,8 +17,8 @@ export function MemberTag({ name, colors, small = false }) {
 
 export function CardHeading({ title, right }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e6e3dc] px-3 py-3 sm:px-6 sm:py-4">
-      <h2 className="text-base font-bold tracking-tight text-[#0f172a]">{title}</h2>
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e6e3dc] px-3 py-2.5 sm:px-4 sm:py-3">
+      <h2 className="text-sm font-bold tracking-tight text-[#0f172a]">{title}</h2>
       {right}
     </div>
   );

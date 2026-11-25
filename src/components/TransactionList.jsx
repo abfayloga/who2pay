@@ -45,6 +45,7 @@ export default function TransactionList({
   onDelete,
   onImport,
   onRecordPayments,
+  onUndoPayments,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [memberFilter, setMemberFilter] = useState('ALL');
@@ -86,6 +87,32 @@ export default function TransactionList({
   const importPreview = parseImportedTransactions(importText, members);
   const viewingExpense = expenses.find((entry) => String(entry.id) === String(viewingExpenseId)) || null;
   const settlementExpense = expenses.find((entry) => String(entry.id) === String(settlementExpenseId) && !entry.isSettlement) || null;
+
+  const isExpenseSettled = (expense) => {
+    if (expense.isSettlement) return false;
+    const repayments = repaymentsForExpense(expense, expenses);
+    return repayments.length > 0 && repayments.every((repayment) => repayment.paid);
+  };
+
+  const renderSplitMembers = (expense) => {
+    const splitNames = expense.splitShares && typeof expense.splitShares === 'object'
+      ? Object.keys(expense.splitShares)
+      : (expense.splitWith || []);
+    const everyoneIncluded = members.length > 0
+      && splitNames.length === members.length
+      && members.every((name) => splitNames.includes(name));
+    if (everyoneIncluded) {
+      return (
+        <span
+          title={members.join(', ')}
+          className="inline-flex rounded-md border border-[#99f6e4] bg-[#f0fdfa] px-1.5 py-0.5 text-xs font-medium text-[#0f766e]"
+        >
+          Everyone ({members.length})
+        </span>
+      );
+    }
+    return splitNames.map((name) => <MemberTag key={name} name={name} colors={colors} small />);
+  };
 
   const handleImport = async () => {
     if (importSaving || !importPreview.transactions.length || importPreview.issues.length) return;
@@ -192,17 +219,30 @@ export default function TransactionList({
         >
           <Eye className="h-4 w-4" />
         </button>
-        {!expense.isSettlement && (
+        {!expense.isSettlement && !complete && (
           <button
             type="button"
             onClick={() => openExpenseSettlement(expense)}
             disabled={settlingKey !== null || !repayments.length}
-            title={!repayments.length ? 'No repayments needed' : 'Review member payments'}
-            className={`rounded-md border px-1.5 py-1.5 text-[11px] font-semibold transition sm:px-2 sm:text-xs ${complete
-              ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]'
-              : 'border-[#99f6e4] bg-[#f0fdfa] text-[#0f766e] hover:bg-[#ccfbf1] disabled:opacity-50'}`}
+            title={!repayments.length ? 'No repayments needed' : 'Settle this individual transaction'}
+            className="rounded-md border border-[#99f6e4] bg-[#f0fdfa] px-1.5 py-1.5 text-[11px] font-semibold text-[#0f766e] transition hover:bg-[#ccfbf1] disabled:opacity-50 sm:px-2 sm:text-xs"
           >
-            {complete ? 'Settled' : paidCount ? `Settle (${paidCount}/${repayments.length})` : 'Settle'}
+            {paidCount ? `Settle (${paidCount}/${repayments.length})` : 'Settle'}
+          </button>
+        )}
+        {!expense.isSettlement && complete && (
+          <span role="status" className="rounded-md border border-[#bbf7d0] bg-[#f0fdf4] px-2 py-1 text-[11px] font-semibold text-[#166534]">Settled</span>
+        )}
+        {!expense.isSettlement && paidCount > 0 && (
+          <button
+            type="button"
+            onClick={() => onUndoPayments(expense)}
+            disabled={settlingKey !== null}
+            title="Undo recorded payments for this transaction"
+            aria-label={`Undo settlement for ${expense.desc}`}
+            className="rounded-md px-2 py-1 text-[11px] font-semibold text-[#64748b] hover:bg-[#f1f5f9] disabled:opacity-50"
+          >
+            Undo
           </button>
         )}
         {!expense.isSettlement && (
@@ -253,7 +293,7 @@ export default function TransactionList({
         )}
       />
       {importOpen && (
-        <div className="space-y-3 border-b border-[#e6e3dc] bg-[#faf9f6] px-3 py-3 sm:px-6 sm:py-5">
+        <div className="space-y-2 border-b border-[#e6e3dc] bg-[#faf9f6] px-3 py-3 sm:px-4 sm:py-4">
           <h3 className="text-sm font-semibold text-[#0f172a]">Import table</h3>
           <textarea
             rows={7}
@@ -305,7 +345,7 @@ export default function TransactionList({
         </div>
       )}
       {importMessage && <p role="status" className="border-b border-[#e6e3dc] px-5 py-3 text-sm text-[#0f766e]">{importMessage}</p>}
-      <div className="border-b border-[#e6e3dc] px-3 py-3 sm:px-6 sm:py-4">
+      <div className="border-b border-[#e6e3dc] px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="flex items-center gap-2">
           <div className="relative min-w-0 flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94a3b8]" />
@@ -389,35 +429,40 @@ export default function TransactionList({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e2e8f0]">
-                {filteredExpenses.map((expense) => (
+                {filteredExpenses.map((expense) => {
+                  const settled = isExpenseSettled(expense);
+                  return (
                   <tr
                     key={expense.id}
-                    className={`align-top transition ${expense.isSettlement ? 'bg-[#eef6f9] hover:bg-[#e4f0f5]' : 'bg-white hover:bg-[#faf9f6]'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}
+                    className={`align-top transition ${expense.isSettlement ? 'bg-[#eef6f9] hover:bg-[#e4f0f5]' : settled ? 'bg-[#f0fdf4] text-[#64748b] hover:bg-[#ecfdf5]' : 'bg-white hover:bg-[#faf9f6]'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}
                   >
-                    <td className="whitespace-nowrap px-4 py-4 text-[#64748b]">{formatDate(expense.datetime) || '—'}</td>
-                    <td className="max-w-[180px] px-4 py-4">
-                      <div className="break-words font-semibold text-[#0f172a]">{expense.desc}</div>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-[#64748b]">{formatDate(expense.datetime) || '—'}</td>
+                    <td className="max-w-[180px] px-3 py-2.5">
+                      <div className={`break-words font-semibold ${settled ? 'text-[#64748b]' : 'text-[#0f172a]'}`}>{expense.desc}</div>
                     </td>
-                    <td className="max-w-[150px] px-4 py-4">
-                      <div className="flex flex-wrap gap-1">
+                    <td className="max-w-[150px] px-3 py-2.5">
+                      <div className="flex flex-nowrap gap-1">
                         {getPayers(expense).map((payer, index) => <MemberTag key={`${payer.member}-${index}`} name={payer.member} colors={colors} small />)}
                       </div>
                     </td>
-                    <td className="max-w-[170px] px-4 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {(expense.splitWith || []).map((name) => <MemberTag key={name} name={name} colors={colors} small />)}
+                    <td className="max-w-[170px] px-3 py-2.5">
+                      <div className="flex flex-nowrap gap-1">
+                        {renderSplitMembers(expense)}
                       </div>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-right font-bold text-[#0f172a]">{formatAmount(expense.amount)}</td>
-                    <td className="px-3 py-3"><div className="flex justify-end">{actionsFor(expense)}</div></td>
+                    <td className={`whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums ${settled ? 'text-[#64748b]' : 'text-[#0f172a]'}`}>{formatAmount(expense.amount)}</td>
+                    <td className="px-2 py-2"><div className="flex justify-end">{actionsFor(expense)}</div></td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <div className="transaction-mobile-list divide-y divide-[#e2e8f0] md:hidden">
-            {filteredExpenses.map((expense) => (
-              <article key={expense.id} className={`px-3 py-3 ${expense.isSettlement ? 'bg-[#eef6f9]' : 'bg-white'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}>
+            {filteredExpenses.map((expense) => {
+              const settled = isExpenseSettled(expense);
+              return (
+              <article key={expense.id} className={`px-3 py-2.5 ${expense.isSettlement ? 'bg-[#eef6f9]' : settled ? 'bg-[#f0fdf4] text-[#64748b]' : 'bg-white'} ${editingExpenseId === expense.id ? 'ring-1 ring-inset ring-[#0f766e]' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <p className="break-words text-sm font-semibold leading-5">{expense.desc}</p>
@@ -446,7 +491,8 @@ export default function TransactionList({
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

@@ -1,4 +1,4 @@
-import { Check, Copy, Wallet } from 'lucide-react';
+import { Activity, Check, Copy, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { CURRENCIES } from '../utils/currency';
 import { secondaryButton } from '../utils/uiClasses';
@@ -15,6 +15,7 @@ export default function RoomHeader({
   onCopyLink,
   theme,
   setTheme,
+  onOpenActivity,
 }) {
   return (
     <header className="sticky top-0 z-20 border-b border-[#e6e3dc] bg-white">
@@ -44,6 +45,9 @@ export default function RoomHeader({
             {CURRENCIES.map(({ code, label }) => <option key={code} value={code}>{label}</option>)}
           </select>
           <ThemeSelector theme={theme} setTheme={setTheme} />
+          <button type="button" onClick={onOpenActivity} className={`${secondaryButton} !px-2`} title="Room activity" aria-label="Room activity">
+            <Activity className="h-4 w-4" />
+          </button>
           <button type="button" onClick={onCopyLink} className={secondaryButton}>
             {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             <span>{copied ? 'Copied' : 'Share'}</span>

@@ -7,6 +7,7 @@ export default function SettlementModal({
   draft,
   members,
   formatAmount,
+  memberPaymentDetails = {},
   saving,
   onChange,
   onClose,
@@ -86,6 +87,12 @@ export default function SettlementModal({
                 <option key={name} value={name} disabled={name === draft.from}>{name}</option>
               ))}
             </select>
+            {draft.to && memberPaymentDetails[draft.to] && (
+              <div className="mt-2 rounded-md border border-[#d5e3de] bg-[#f2f8f5] px-3 py-2">
+                <p className="text-xs font-semibold text-[#315d53]">Recipient payment details</p>
+                <p className="mt-1 break-words text-sm text-[#173f37]">{memberPaymentDetails[draft.to]}</p>
+              </div>
+            )}
           </div>
         </div>
         {samePerson && <p role="alert" className="text-sm text-[#b91c1c]">Choose two different members.</p>}
@@ -106,7 +113,7 @@ export default function SettlementModal({
             <p className="mt-1 text-xs text-[#64748b]">
               {parsedAmount === null || parsedAmount <= 0
                 ? <span className="text-[#be123c]">Enter a valid amount greater than 0</span>
-                : <span className="font-semibold text-[#0f766e]">= {formatAmount(parsedAmount)}</span>}
+                : <span className="font-semibold tabular-nums text-[#0f766e]">= {formatAmount(parsedAmount)}</span>}
             </p>
           )}
         </div>

@@ -4,11 +4,13 @@ export function calculateFinancials(members, expenses) {
   const balances = {};
   const totalPaid = {};
   const totalShare = {};
+  const totalSettled = {};
 
   members.forEach((member) => {
     balances[member] = 0;
     totalPaid[member] = 0;
     totalShare[member] = 0;
+    totalSettled[member] = 0;
   });
 
   expenses.forEach((exp) => {
@@ -27,6 +29,7 @@ export function calculateFinancials(members, expenses) {
         const paid = Number(payer.amount) || 0;
         if (balances[payer.member] !== undefined) balances[payer.member] += paid;
         if (totalPaid[payer.member] !== undefined && !exp.isSettlement) totalPaid[payer.member] += paid;
+        if (totalSettled[payer.member] !== undefined && exp.isSettlement) totalSettled[payer.member] += paid;
       });
     } else if (exp.paidBy) {
       if (balances[exp.paidBy] !== undefined) balances[exp.paidBy] += amount;
@@ -37,6 +40,7 @@ export function calculateFinancials(members, expenses) {
       const share = Number(shares[person]) || 0;
       if (balances[person] !== undefined) balances[person] -= share;
       if (totalShare[person] !== undefined && !exp.isSettlement) totalShare[person] += share;
+      if (totalSettled[person] !== undefined && exp.isSettlement) totalSettled[person] += share;
     });
   });
 
@@ -44,6 +48,7 @@ export function calculateFinancials(members, expenses) {
     balances[member] = Math.round(balances[member] * 100) / 100;
     totalPaid[member] = Math.round(totalPaid[member] * 100) / 100;
     totalShare[member] = Math.round(totalShare[member] * 100) / 100;
+    totalSettled[member] = Math.round(totalSettled[member] * 100) / 100;
   });
 
   // 3. Debt Minimization Algorithm
@@ -83,7 +88,7 @@ export function calculateFinancials(members, expenses) {
     if (creditorList[j].amount < 0.01) j++;
   }
 
-  return { balances, totalPaid, totalShare, settlements };
+  return { balances, totalPaid, totalShare, totalSettled, settlements };
 }
 
 // Build expense-specific repayments in integer cents to avoid rounding errors.

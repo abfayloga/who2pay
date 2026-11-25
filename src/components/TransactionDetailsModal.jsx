@@ -27,7 +27,7 @@ export default function TransactionDetailsModal({ expense, colors, formatAmount,
         </div>
         <div className="flex items-center justify-between gap-3">
           <dt className="text-[#64748b]">Amount</dt>
-          <dd className="font-semibold">{formatAmount(expense.amount)}</dd>
+          <dd className="font-semibold tabular-nums">{formatAmount(expense.amount)}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Paid by</dt>
@@ -35,7 +35,7 @@ export default function TransactionDetailsModal({ expense, colors, formatAmount,
             {payers.map((payer, index) => (
               <div key={`${payer.member}-${index}`} className="flex items-center justify-between gap-3">
                 <MemberTag name={payer.member} colors={colors} small />
-                <span className="font-medium">{formatAmount(payer.amount)}</span>
+                <span className="font-medium tabular-nums">{formatAmount(payer.amount)}</span>
               </div>
             ))}
           </dd>
@@ -47,7 +47,7 @@ export default function TransactionDetailsModal({ expense, colors, formatAmount,
               {participants.map((name) => (
                 <div key={name} className="flex items-center justify-between gap-3">
                   <MemberTag name={name} colors={colors} small />
-                  <span className="font-medium">{formatAmount(shares[name] || 0)}</span>
+                  <span className="font-medium tabular-nums">{formatAmount(shares[name] || 0)}</span>
                 </div>
               ))}
             </dd>
@@ -61,7 +61,7 @@ export default function TransactionDetailsModal({ expense, colors, formatAmount,
                 <div key={`${item.desc}-${index}`} className="rounded-md border border-[#e6e3dc] px-3 py-2">
                   <div className="flex items-start justify-between gap-3">
                     <span className="min-w-0 break-words font-medium">{item.desc || `Item ${index + 1}`}</span>
-                    <span className="shrink-0 font-medium">{formatAmount(item.amount)}</span>
+                    <span className="shrink-0 font-medium tabular-nums">{formatAmount(item.amount)}</span>
                   </div>
                   {!!item.members?.length && (
                     <div className="mt-2 flex flex-wrap gap-1">
@@ -75,8 +75,14 @@ export default function TransactionDetailsModal({ expense, colors, formatAmount,
         )}
         {expense.desc && (
           <div>
-            <dt className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Note</dt>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Description</dt>
             <dd className="mt-1 break-words text-[#334155]">{expense.desc}</dd>
+          </div>
+        )}
+        {expense.notes && (
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-[#64748b]">Notes</dt>
+            <dd className="mt-1 break-words text-[#334155]">{expense.notes}</dd>
           </div>
         )}
       </dl>

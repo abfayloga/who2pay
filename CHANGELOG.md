@@ -4,6 +4,20 @@ All notable changes to **Who2Pay** are documented here.
 
 Changes below describe the source-code updates prepared for this project. They are not presented as published releases, and earlier changes are not assigned version numbers or dates because no release tags were provided.
 
+## [Unreleased] — 2026-11-26 — Compact balances and transaction UX
+
+### Added
+- A personal-share overview metric, compact per-member share grid, and active-member highlight.
+- Collapsible settled-member balances, inline Paid/Share/Settled figures, and compact full-group split badges.
+- Optional expense notes and saved member payment details, shown when viewing transaction details or preparing a transfer.
+- A room activity log and temporary undo actions for transaction deletion and settlements.
+
+### Changed
+- Tightened card, form, table, and control spacing while preserving light and dark theme styling.
+- Clarified individual transaction settlement actions, visually marked settled transactions, and allowed recorded payments to be undone.
+- Persisted payment details and activity through the existing `member_colors` JSONB data without adding a database column.
+- Applied tabular numerals to key currency figures for easier comparison.
+
 ## [Unreleased] — 2026-10-14 — Near-black dark mode
 
 ### Added

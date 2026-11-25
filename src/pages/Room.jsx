@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Users, Wallet } from 'lucide-react';
+import { ArrowRight, Undo2, Users, Wallet } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import BalancesSidebar, { GroupSummary } from '../components/BalancesSidebar';
+import ActivityLogModal from '../components/ActivityLogModal';
 import ExpenseForm from '../components/ExpenseForm';
 import RoomHeader from '../components/RoomHeader';
 import SettlementModal from '../components/SettlementModal';
@@ -29,6 +30,8 @@ export default function Room() {
   const { theme, setTheme } = useTheme();
   const { roomId } = useParams();
   const formRef = useRef(null);
+  const roomRef = useRef(null);
+  const undoTimerRef = useRef(null);
 
   const [room, setRoom] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -43,8 +46,63 @@ export default function Room() {
   const [colorNotice, setColorNotice] = useState('');
   const [editingExpenseId, setEditingExpenseId] = useState(null);
   const [transferDraft, setTransferDraft] = useState(null);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [undoToast, setUndoToast] = useState(null);
 
   const colorCacheKey = `who2pay:member-colors:${roomId}`;
+
+  useEffect(() => () => {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    roomRef.current = room;
+  }, [room]);
+
+  const withActivity = (nextRoom, action, description) => ({
+    ...nextRoom,
+    activity: [{
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      actor: currentUser,
+      action,
+      description,
+      datetime: new Date().toISOString(),
+    }, ...(nextRoom.activity || [])].slice(0, 100),
+  });
+
+  const clearUndoToast = () => {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setUndoToast(null);
+  };
+
+  const handleSavePaymentDetails = async (name, paymentDetails) => {
+    const currentRoom = roomRef.current;
+    if (!currentRoom?.members?.includes(name)) return false;
+    const memberPaymentDetails = { ...(currentRoom.memberPaymentDetails || {}) };
+    if (paymentDetails.trim()) memberPaymentDetails[name] = paymentDetails.trim();
+    else delete memberPaymentDetails[name];
+    return save({ ...currentRoom, memberPaymentDetails });
+  };
+
+  const showUndoToast = (message, undo) => {
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    setUndoToast({ message, undo, isUndoing: false });
+    undoTimerRef.current = window.setTimeout(() => {
+      undoTimerRef.current = null;
+      setUndoToast(null);
+    }, 8000);
+  };
+
+  const handleUndo = async () => {
+    if (!undoToast || undoToast.isUndoing) return;
+    if (undoTimerRef.current) window.clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = null;
+    setUndoToast((current) => current && { ...current, isUndoing: true });
+    const restored = await undoToast.undo();
+    if (restored) setUndoToast(null);
+    else setUndoToast((current) => current && { ...current, isUndoing: false });
+  };
 
   const cacheColors = (next) => {
     setLocalMemberColors(next);
@@ -118,7 +176,8 @@ export default function Room() {
   }, [roomId]);
 
   const save = async (nextRoom) => {
-    const previous = room;
+    const previous = roomRef.current;
+    roomRef.current = nextRoom;
     setRoom(nextRoom);
     setSaveError('');
     try {
@@ -127,6 +186,7 @@ export default function Room() {
     } catch (error) {
       console.error('Room update failed:', error);
       setSaveError('Your changes could not be saved. Please try again.');
+      roomRef.current = previous;
       setRoom(previous);
       return false;
     }
@@ -168,11 +228,13 @@ export default function Room() {
     if (!window.confirm(`Remove "${name}" from this group? Existing transactions will be kept.`)) return;
     const members = room.members.filter((member) => member !== name);
     const colors = { ...(room.memberColors || {}) };
+    const memberPaymentDetails = { ...(room.memberPaymentDetails || {}) };
     delete colors[name];
+    delete memberPaymentDetails[name];
     const cached = { ...localMemberColors };
     delete cached[name];
     cacheColors(cached);
-    if (!(await save({ ...room, members, memberColors: colors }))) return;
+    if (!(await save({ ...room, members, memberColors: colors, memberPaymentDetails }))) return;
     if (currentUser === name) handleSwitchUser();
   };
 
@@ -216,32 +278,58 @@ export default function Room() {
   };
 
   const handleSaveExpense = async (payload) => {
-    if (!room) return false;
+    const currentRoom = roomRef.current;
+    if (!currentRoom) return false;
     if (editingExpenseId !== null) {
-      const expenses = (room.expenses || []).map((expense) => (
+      const expenses = (currentRoom.expenses || []).map((expense) => (
         expense.id === editingExpenseId ? { ...expense, ...payload } : expense
       ));
-      const saved = await save({ ...room, expenses });
+      const nextRoom = withActivity({ ...currentRoom, expenses }, 'edited', `Edited "${payload.desc}"`);
+      const saved = await save(nextRoom);
       if (saved) setEditingExpenseId(null);
       return saved;
     }
-    return save({ ...room, expenses: [{ id: Date.now(), ...payload }, ...(room.expenses || [])] });
+    const nextRoom = withActivity({
+      ...currentRoom,
+      expenses: [{ id: Date.now(), ...payload }, ...(currentRoom.expenses || [])],
+    }, 'added', `Added "${payload.desc}"`);
+    return save(nextRoom);
   };
 
   const handleRemoveExpense = async (id) => {
-    if ((room.expenses || []).some((entry) => entry.isSettlement && String(entry.sourceExpenseId) === String(id))) {
+    const currentRoom = roomRef.current;
+    if (!currentRoom) return;
+    if ((currentRoom.expenses || []).some((entry) => entry.isSettlement && String(entry.sourceExpenseId) === String(id))) {
       window.alert('Remove the linked settlement records before deleting this expense.');
       return;
     }
-    if (!window.confirm('Delete this transaction? This cannot be undone.')) return;
-    const expenses = (room.expenses || []).filter((expense) => expense.id !== id);
-    if (await save({ ...room, expenses }) && editingExpenseId === id) setEditingExpenseId(null);
+    if (!window.confirm('Delete this transaction? You can undo this for a short time.')) return;
+    const removed = (currentRoom.expenses || []).filter((expense) => expense.id === id);
+    const expenses = (currentRoom.expenses || []).filter((expense) => expense.id !== id);
+    const nextRoom = withActivity({
+      ...currentRoom,
+      expenses,
+    }, 'deleted', `Deleted "${removed[0]?.desc || 'transaction'}"`);
+    if (!(await save(nextRoom))) return;
+    if (editingExpenseId === id) setEditingExpenseId(null);
+    showUndoToast('Transaction deleted.', async () => {
+      const latestRoom = roomRef.current;
+      if (!latestRoom || !removed.length) return false;
+      const existingIds = new Set((latestRoom.expenses || []).map((expense) => String(expense.id)));
+      const restored = removed.filter((expense) => !existingIds.has(String(expense.id)));
+      const undoRoom = withActivity({
+        ...latestRoom,
+        expenses: [...restored, ...(latestRoom.expenses || [])],
+      }, 'undo', `Restored "${removed[0].desc || 'transaction'}"`);
+      return save(undoRoom);
+    });
   };
 
   const handleRecordPayments = async (expense, selected) => {
-    if (!room || !selected.length || settlingKey !== null) return false;
-    const lines = selected.map(({ from, to, amount }) => `${from} → ${to}: ${formatCurrency(amount, room.currency)}`).join('\n');
-    if (!window.confirm(`Record ${selected.length} payment(s) for "${expense.desc}"?\n\n${lines}\n\nThis updates shared balances only.`)) return false;
+    const currentRoom = roomRef.current;
+    if (!currentRoom || !selected.length || settlingKey !== null) return false;
+    const lines = selected.map(({ from, to, amount }) => `${from} → ${to}: ${formatCurrency(amount, currentRoom.currency)}`).join('\n');
+    if (!window.confirm(`Mark ${selected.length} payment(s) as settled for this specific transaction, "${expense.desc}"?\n\n${lines}\n\nThis does not settle other transactions.`)) return false;
     setSettlingKey(`expense:${expense.id}`);
     const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     const timestamp = todayIsoDate();
@@ -260,7 +348,44 @@ export default function Room() {
       settlementBatchId: batchId,
     }));
     try {
-      return await save({ ...room, expenses: [...settlementEntries, ...(room.expenses || [])] });
+      const nextRoom = withActivity({
+        ...currentRoom,
+        expenses: [...settlementEntries, ...(currentRoom.expenses || [])],
+      }, 'settled', `Settled "${expense.desc}"`);
+      const saved = await save(nextRoom);
+      if (saved) {
+        const settlementIds = new Set(settlementEntries.map((entry) => String(entry.id)));
+        showUndoToast(`Settled "${expense.desc}".`, async () => {
+          const latestRoom = roomRef.current;
+          if (!latestRoom) return false;
+          const undoRoom = withActivity({
+            ...latestRoom,
+            expenses: (latestRoom.expenses || []).filter((entry) => !settlementIds.has(String(entry.id))),
+          }, 'undo', `Undid settlement for "${expense.desc}"`);
+          return save(undoRoom);
+        });
+      }
+      return saved;
+    } finally {
+      setSettlingKey(null);
+    }
+  };
+
+  const handleUndoPayments = async (expense) => {
+    const currentRoom = roomRef.current;
+    if (!currentRoom || settlingKey !== null) return;
+    if (!window.confirm(`Undo settlement for "${expense.desc}"?`)) return;
+    const linkedIds = new Set((currentRoom.expenses || [])
+      .filter((entry) => entry.isSettlement && String(entry.sourceExpenseId) === String(expense.id))
+      .map((entry) => String(entry.id)));
+    if (!linkedIds.size) return;
+    setSettlingKey(`undo:${expense.id}`);
+    try {
+      const nextRoom = withActivity({
+        ...currentRoom,
+        expenses: (currentRoom.expenses || []).filter((entry) => !linkedIds.has(String(entry.id))),
+      }, 'unsettled', `Undid settlement for "${expense.desc}"`);
+      await save(nextRoom);
     } finally {
       setSettlingKey(null);
     }
@@ -283,13 +408,14 @@ export default function Room() {
   };
 
   const handleRecordTransfer = async ({ from, to, amount, note, date }) => {
-    if (settlingKey !== null || !room?.members?.includes(currentUser)) return;
+    const currentRoom = roomRef.current;
+    if (settlingKey !== null || !currentRoom?.members?.includes(currentUser)) return;
     const rounded = Math.round(Number(amount) * 100) / 100;
     if (!Number.isFinite(rounded) || rounded <= 0 || from === to || !room.members.includes(from) || !room.members.includes(to)) {
       window.alert('Choose two different members and an amount greater than 0.');
       return;
     }
-    const formatted = formatCurrency(rounded, room.currency);
+    const formatted = formatCurrency(rounded, currentRoom.currency);
     const confirmation = from === currentUser || to === currentUser
       ? `Record ${from} paying ${formatted} to ${to}? This updates shared balances only.`
       : `Record ${from} paying ${formatted} to ${to}? This updates shared balances for other members only.`;
@@ -307,7 +433,22 @@ export default function Room() {
       isSettlement: true,
     };
     try {
-      if (await save({ ...room, expenses: [entry, ...(room.expenses || [])] })) setTransferDraft(null);
+      const nextRoom = withActivity({
+        ...currentRoom,
+        expenses: [entry, ...(currentRoom.expenses || [])],
+      }, 'settled', `Recorded transfer: ${from} → ${to}`);
+      if (await save(nextRoom)) {
+        setTransferDraft(null);
+        showUndoToast('Transfer recorded.', async () => {
+          const latestRoom = roomRef.current;
+          if (!latestRoom) return false;
+          const undoRoom = withActivity({
+            ...latestRoom,
+            expenses: (latestRoom.expenses || []).filter((expense) => String(expense.id) !== String(entry.id)),
+          }, 'undo', `Undid transfer: ${from} → ${to}`);
+          return save(undoRoom);
+        });
+      }
     } finally {
       setSettlingKey(null);
     }
@@ -346,14 +487,14 @@ export default function Room() {
       id: `${start}-${index}-${Math.random().toString(36).slice(2, 8)}`,
       datetime: todayIsoDate(),
     }));
-    const updatedRoom = {
+    const updatedRoom = withActivity({
       ...room,
       members: [
         ...room.members,
         ...newMembers.filter((member) => !room.members.some((existing) => existing.toLowerCase() === member.toLowerCase())),
       ],
       expenses: [...additions, ...(room.expenses || [])],
-    };
+    }, 'added', `Imported ${additions.length} transactions`);
     try {
       await saveRoomData(roomId, updatedRoom);
       setRoom(updatedRoom);
@@ -459,8 +600,9 @@ export default function Room() {
         onCopyLink={copyRoomLink}
         theme={theme}
         setTheme={setTheme}
+        onOpenActivity={() => setActivityOpen(true)}
       />
-      <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-4 sm:px-6 sm:py-8">
+      <main className="mx-auto w-full max-w-7xl flex-1 px-3 py-3 sm:px-6 sm:py-5">
         {saveError && (
           <div role="alert" className="mb-5 rounded-lg border border-[#fecaca] bg-[#fff1f2] px-4 py-3 text-sm text-[#b91c1c]">{saveError}</div>
         )}
@@ -476,8 +618,8 @@ export default function Room() {
           onOpenTransfer={openTransfer}
           transferLocked={settlingKey !== null}
         />
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:gap-6">
-          <div className="min-w-0 space-y-4 sm:space-y-6">
+        <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:gap-4">
+          <div className="min-w-0 space-y-3 sm:space-y-4">
             <ExpenseForm
               key={editingExpenseId ?? 'new'}
               ref={formRef}
@@ -503,6 +645,7 @@ export default function Room() {
               onDelete={handleRemoveExpense}
               onImport={importTransactions}
               onRecordPayments={handleRecordPayments}
+              onUndoPayments={handleUndoPayments}
             />
           </div>
           <BalancesSidebar
@@ -511,6 +654,7 @@ export default function Room() {
             balances={financials.balances}
             totalPaid={financials.totalPaid}
             totalShare={financials.totalShare}
+            totalSettled={financials.totalSettled}
             settlements={financials.settlements}
             currentUser={currentUser}
             formatAmount={formatAmount}
@@ -520,6 +664,8 @@ export default function Room() {
             onRemoveMember={handleRemoveMember}
             onSaveColor={saveMemberColor}
             onResetColor={resetMemberColor}
+            memberPaymentDetails={room.memberPaymentDetails || {}}
+            onSavePaymentDetails={handleSavePaymentDetails}
             colorNotice={colorNotice}
           />
         </div>
@@ -528,11 +674,24 @@ export default function Room() {
         draft={transferDraft}
         members={members}
         formatAmount={formatAmount}
+        memberPaymentDetails={room.memberPaymentDetails || {}}
         saving={settlingKey === 'transfer'}
         onChange={setTransferDraft}
         onClose={() => { if (settlingKey !== 'transfer') setTransferDraft(null); }}
         onSubmit={handleRecordTransfer}
       />
+      {activityOpen && (
+        <ActivityLogModal activity={room.activity || []} onClose={() => setActivityOpen(false)} />
+      )}
+      {undoToast && (
+        <div className="fixed bottom-4 left-1/2 z-[60] flex w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-3 rounded-lg bg-[#0f172a] px-4 py-3 text-sm text-white shadow-xl" role="status">
+          <span className="min-w-0 flex-1 truncate">{undoToast.message}</span>
+          <button type="button" onClick={handleUndo} disabled={undoToast.isUndoing} className="inline-flex shrink-0 items-center gap-1 font-semibold text-[#99f6e4] hover:underline disabled:opacity-50">
+            <Undo2 className="h-4 w-4" /> {undoToast.isUndoing ? 'Undoing…' : 'Undo'}
+          </button>
+          <button type="button" onClick={clearUndoToast} aria-label="Dismiss undo message" className="shrink-0 rounded px-1 text-white/70 hover:bg-white/10 hover:text-white">×</button>
+        </div>
+      )}
       <footer className="mt-10 border-t border-[#e6e3dc] bg-white px-5 py-5 text-center text-xs text-[#64748b]">
         Who2Pay · Achilles Fayloga
       </footer>
