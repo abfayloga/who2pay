@@ -13,41 +13,37 @@ export function calculateFinancials(members, expenses) {
 
   expenses.forEach((exp) => {
     const amount = Number(exp.amount) || 0;
-    const splitWith = exp.splitWith || [];
-
-    if (splitWith.length === 0 || amount <= 0) return;
+    if (!(amount > 0)) return;
 
     const shares = getExpenseShares(exp);
+    // Settlements apply the recorded amount in full: partial payments, overpayments, and transfers.
+    const recipients = exp.isSettlement
+      ? [...new Set([...(exp.splitWith || []), ...Object.keys(shares || {})])]
+      : (exp.splitWith || []);
+    if (!recipients.length) return;
 
-    // 1. Credit payers (supports both multiple payers array & legacy single paidBy)
     if (Array.isArray(exp.payers) && exp.payers.length > 0) {
-      exp.payers.forEach((p) => {
-        const pAmt = Number(p.amount) || 0;
-        if (balances[p.member] !== undefined) {
-          balances[p.member] += pAmt;
-        }
-        if (totalPaid[p.member] !== undefined && !exp.isSettlement) {
-          totalPaid[p.member] += pAmt;
-        }
+      exp.payers.forEach((payer) => {
+        const paid = Number(payer.amount) || 0;
+        if (balances[payer.member] !== undefined) balances[payer.member] += paid;
+        if (totalPaid[payer.member] !== undefined && !exp.isSettlement) totalPaid[payer.member] += paid;
       });
     } else if (exp.paidBy) {
-      if (balances[exp.paidBy] !== undefined) {
-        balances[exp.paidBy] += amount;
-      }
-      if (totalPaid[exp.paidBy] !== undefined && !exp.isSettlement) {
-        totalPaid[exp.paidBy] += amount;
-      }
+      if (balances[exp.paidBy] !== undefined) balances[exp.paidBy] += amount;
+      if (totalPaid[exp.paidBy] !== undefined && !exp.isSettlement) totalPaid[exp.paidBy] += amount;
     }
 
-    // 2. Debit debtors
-    splitWith.forEach((person) => {
-      if (balances[person] !== undefined) {
-        balances[person] -= Number(shares[person]) || 0;
-      }
-      if (totalShare[person] !== undefined && !exp.isSettlement) {
-        totalShare[person] += Number(shares[person]) || 0;
-      }
+    recipients.forEach((person) => {
+      const share = Number(shares[person]) || 0;
+      if (balances[person] !== undefined) balances[person] -= share;
+      if (totalShare[person] !== undefined && !exp.isSettlement) totalShare[person] += share;
     });
+  });
+
+  members.forEach((member) => {
+    balances[member] = Math.round(balances[member] * 100) / 100;
+    totalPaid[member] = Math.round(totalPaid[member] * 100) / 100;
+    totalShare[member] = Math.round(totalShare[member] * 100) / 100;
   });
 
   // 3. Debt Minimization Algorithm
@@ -129,4 +125,30 @@ export function transfersForExpense(expense) {
     if (!creditors[j].cents) j += 1;
   }
   return transfers;
+}
+
+// Rebuild per-expense repayment checks from saved settlements, including older records without an index.
+export function repaymentsForExpense(expense, entries = []) {
+  const transfers = transfersForExpense(expense);
+  const recorded = entries.filter((entry) =>
+    entry.isSettlement && String(entry.sourceExpenseId) === String(expense?.id)
+  );
+  const usedLegacy = new Set();
+  return transfers.map((transfer, index) => {
+    const exact = recorded.find((entry) => Number(entry.sourceTransferIndex) === index);
+    let matched = exact;
+    if (!matched) {
+      const legacyIndex = recorded.findIndex((entry, entryIndex) =>
+        entry.sourceTransferIndex == null && !usedLegacy.has(entryIndex) &&
+        (entry.paidBy === transfer.from || entry.payers?.[0]?.member === transfer.from) &&
+        entry.splitWith?.includes(transfer.to) &&
+        Math.abs(Number(entry.amount) - transfer.amount) < 0.005
+      );
+      if (legacyIndex !== -1) {
+        usedLegacy.add(legacyIndex);
+        matched = recorded[legacyIndex];
+      }
+    }
+    return { ...transfer, index, paid: Boolean(matched) };
+  });
 }

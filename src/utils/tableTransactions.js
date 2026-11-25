@@ -1,5 +1,8 @@
-// Shared four-column table format for paste import and exports.
+import { formatDate } from './formatDate';
+
+// Shared four-column table format for paste import.
 export const TABLE_HEADERS = ['Description', 'Amount', 'Paid By', 'Split Between'];
+export const EXPORT_HEADERS = ['Date', ...TABLE_HEADERS];
 
 export function parseDelimited(text, delimiter) {
   const rows = [];
@@ -86,8 +89,27 @@ export function parseImportedTransactions(text, existingMembers = []) {
   return { transactions, issues, newMembers: [...newMembers], rowCount: rows.length };
 }
 
+export function getPayers(expense) {
+  if (Array.isArray(expense?.payers) && expense.payers.length) return expense.payers;
+  return [{ member: expense?.paidBy || 'Unknown', amount: expense?.amount }];
+}
+
 export function tableRowForTransaction(expense) {
-  const payers = Array.isArray(expense.payers) && expense.payers.length ? expense.payers : [{ member: expense.paidBy || '', amount: expense.amount }];
-  const payerText = payers.length === 1 ? payers[0].member : payers.map(({ member, amount }) => `${member} (${Number(amount).toFixed(2)})`).join('; ');
-  return [expense.desc || 'General Expense', Number(expense.amount || 0).toFixed(2), payerText, (expense.splitWith || []).join(', ')];
+  const payers = Array.isArray(expense?.payers) && expense.payers.length
+    ? expense.payers
+    : [{ member: expense?.paidBy || '', amount: expense?.amount }];
+  const recordedAmount = Number(expense?.amount || 0);
+  const payerText = payers.length === 1
+    ? (payers[0].member || '')
+    : payers.map(({ member, amount }) => `${member} (${Number(amount).toFixed(2)})`).join('; ');
+  const shareNames = expense?.isSettlement && expense.splitShares && typeof expense.splitShares === 'object'
+    ? Object.keys(expense.splitShares)
+    : [];
+  const splitNames = shareNames.length ? shareNames : (expense?.splitWith || []);
+  const description = expense?.desc || (expense?.isSettlement ? 'Settlement' : 'General Expense');
+  return [description, (Number.isFinite(recordedAmount) ? recordedAmount : 0).toFixed(2), payerText, splitNames.join(', ')];
+}
+
+export function exportRowForTransaction(expense) {
+  return [formatDate(expense?.datetime) || '', ...tableRowForTransaction(expense)];
 }

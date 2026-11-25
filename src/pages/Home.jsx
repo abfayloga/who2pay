@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, ArrowRight, Sun, Moon, Monitor } from 'lucide-react';
 import { saveRoomData } from '../utils/storage';
@@ -47,7 +47,6 @@ export default function Home() {
         <section className="w-full max-w-md rounded-xl border border-[#dedbd4] bg-white p-6 sm:p-8">
           <span className="mb-5 inline-flex h-12 w-12 items-center justify-center rounded-lg bg-[#f0fdfa] text-[#0f766e]"><Users className="h-6 w-6" /></span>
           <h1 className="text-2xl font-bold tracking-tight">Split expenses, simply.</h1>
-          <p className="mt-2 text-sm leading-6 text-[#64748b]">Create a room, share the link, and track balances together in real time. No sign-up needed.</p>
           <form onSubmit={handleCreateRoom} className="mt-7 space-y-4">
             <div>
               <label htmlFor="groupName" className="mb-1.5 block text-sm font-medium">Group name</label>

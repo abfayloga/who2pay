@@ -18,7 +18,6 @@ export function useTheme() {
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const onChange = (event) => setSystemDark(event.matches);
-    setSystemDark(media.matches);
     media.addEventListener?.('change', onChange);
     return () => media.removeEventListener?.('change', onChange);
   }, []);
