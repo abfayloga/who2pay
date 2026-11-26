@@ -12,7 +12,17 @@ import { MemberTag } from '../components/roomUi';
 import { useTheme } from '../hooks/useTheme';
 import { CURRENCIES, formatCurrency } from '../utils/currency';
 import { todayIsoDate } from '../utils/formatDate';
-import { calculateFinancials } from '../utils/settlement';
+import {
+  calculateFinancials,
+  createPayerCreditTransfer,
+  createSettlementOffsets,
+  getCreditOwnerShares,
+  getSettledMemberIds,
+  getTransferSettledExpenseIds,
+  initializeCreditOwnerShares,
+  reassignUnsettledPayerCredits,
+  undoTransferSettlement,
+} from '../utils/settlement';
 import { getRoomData, normalizeRoomData, saveRoomData } from '../utils/storage';
 import { supabase } from '../utils/supabase';
 import { cardClass, fieldClass, primaryButton } from '../utils/uiClasses';
@@ -24,6 +34,65 @@ function readColorCache(roomId) {
   } catch {
     return {};
   }
+}
+
+function getSettlementPayer(expense) {
+  return expense?.paidBy || expense?.payers?.[0]?.member || '';
+}
+
+function captureSettlementFields(expenses, includeExpense = () => true) {
+  return new Map(expenses.filter(includeExpense).map((expense) => [String(expense.id), {
+    hasSettledMemberIds: Object.prototype.hasOwnProperty.call(expense, 'settledMemberIds'),
+    settledMemberIds: expense.settledMemberIds,
+    hasSettlementCashEvents: Object.prototype.hasOwnProperty.call(expense, 'settlementCashEvents'),
+    settlementCashEvents: expense.settlementCashEvents,
+    hasCreditOwnerShares: Object.prototype.hasOwnProperty.call(expense, 'creditOwnerShares'),
+    creditOwnerShares: expense.creditOwnerShares,
+    hasBalanceNeutral: Object.prototype.hasOwnProperty.call(expense, 'balanceNeutral'),
+    balanceNeutral: expense.balanceNeutral,
+    hasSettledExpenseIds: Object.prototype.hasOwnProperty.call(expense, 'settledExpenseIds'),
+    settledExpenseIds: expense.settledExpenseIds,
+  }]));
+}
+
+function restoreSettlementFields(expenses, snapshot) {
+  return expenses.map((expense) => {
+    const previous = snapshot.get(String(expense.id));
+    if (!previous) return expense;
+    const restored = { ...expense };
+    if (previous.hasSettledMemberIds) restored.settledMemberIds = previous.settledMemberIds;
+    else delete restored.settledMemberIds;
+    if (previous.hasSettlementCashEvents) restored.settlementCashEvents = previous.settlementCashEvents;
+    else delete restored.settlementCashEvents;
+    if (previous.hasCreditOwnerShares) restored.creditOwnerShares = previous.creditOwnerShares;
+    else delete restored.creditOwnerShares;
+    if (previous.hasBalanceNeutral) restored.balanceNeutral = previous.balanceNeutral;
+    else delete restored.balanceNeutral;
+    if (previous.hasSettledExpenseIds) restored.settledExpenseIds = previous.settledExpenseIds;
+    else delete restored.settledExpenseIds;
+    return restored;
+  });
+}
+
+function withInitialSettledMembers(expense, previousExpense, entries) {
+  const participants = [...new Set(expense.splitWith || [])];
+  const previousSettled = previousExpense
+    ? getSettledMemberIds(previousExpense, entries).filter((member) => participants.includes(member))
+    : [];
+  const payers = Array.isArray(expense.payers) && expense.payers.length
+    ? expense.payers.map((payer) => payer.member)
+    : [expense.paidBy];
+  const initializedExpense = {
+    ...expense,
+    settledMemberIds: [...new Set([
+      ...previousSettled,
+      ...payers.filter((member) => participants.includes(member)),
+    ])],
+  };
+  return {
+    ...initializedExpense,
+    creditOwnerShares: initializeCreditOwnerShares(initializedExpense, previousExpense),
+  };
 }
 
 export default function Room() {
@@ -281,17 +350,28 @@ export default function Room() {
     const currentRoom = roomRef.current;
     if (!currentRoom) return false;
     if (editingExpenseId !== null) {
-      const expenses = (currentRoom.expenses || []).map((expense) => (
-        expense.id === editingExpenseId ? { ...expense, ...payload } : expense
+      const previousExpense = (currentRoom.expenses || []).find((expense) => expense.id === editingExpenseId);
+      if (!previousExpense) return false;
+      const updatedExpense = withInitialSettledMembers(
+        { ...previousExpense, ...payload },
+        previousExpense,
+        currentRoom.expenses || [],
+      );
+      const expenses = currentRoom.expenses.map((expense) => (
+        expense.id === editingExpenseId ? updatedExpense : expense
       ));
       const nextRoom = withActivity({ ...currentRoom, expenses }, 'edited', `Edited "${payload.desc}"`);
       const saved = await save(nextRoom);
       if (saved) setEditingExpenseId(null);
       return saved;
     }
+    const newExpense = withInitialSettledMembers({
+      id: Date.now(),
+      ...payload,
+    }, null, currentRoom.expenses || []);
     const nextRoom = withActivity({
       ...currentRoom,
-      expenses: [{ id: Date.now(), ...payload }, ...(currentRoom.expenses || [])],
+      expenses: [newExpense, ...(currentRoom.expenses || [])],
     }, 'added', `Added "${payload.desc}"`);
     return save(nextRoom);
   };
@@ -304,12 +384,29 @@ export default function Room() {
       return;
     }
     if (!window.confirm('Delete this transaction? You can undo this for a short time.')) return;
-    const removed = (currentRoom.expenses || []).filter((expense) => expense.id === id);
-    const expenses = (currentRoom.expenses || []).filter((expense) => expense.id !== id);
+    const removed = (currentRoom.expenses || []).filter((expense) => (
+      String(expense.id) === String(id)
+      || String(expense.sourceTransferId) === String(id)
+    ));
+    const deletedTransaction = removed.find((expense) => String(expense.id) === String(id)) || removed[0];
+    const removedSettlement = removed.find((expense) => String(expense.id) === String(id) && expense.isSettlement);
+    const settledExpenseIds = removedSettlement
+      ? getTransferSettledExpenseIds(removedSettlement, currentRoom.expenses || [])
+      : [];
+    const settlementSnapshot = captureSettlementFields(
+      currentRoom.expenses || [],
+      (expense) => settledExpenseIds.some((settledId) => String(settledId) === String(expense.id)),
+    );
+    const removedIds = new Set(removed.map((expense) => String(expense.id)));
+    const expensesWithoutDeleted = (currentRoom.expenses || []).filter((expense) => !removedIds.has(String(expense.id)));
+    const expenses = removedSettlement
+      ? undoTransferSettlement(currentRoom.expenses || [], removedSettlement)
+        .filter((expense) => !removedIds.has(String(expense.id)))
+      : expensesWithoutDeleted;
     const nextRoom = withActivity({
       ...currentRoom,
       expenses,
-    }, 'deleted', `Deleted "${removed[0]?.desc || 'transaction'}"`);
+    }, 'deleted', `Deleted "${deletedTransaction?.desc || 'transaction'}"`);
     if (!(await save(nextRoom))) return;
     if (editingExpenseId === id) setEditingExpenseId(null);
     showUndoToast('Transaction deleted.', async () => {
@@ -319,73 +416,118 @@ export default function Room() {
       const restored = removed.filter((expense) => !existingIds.has(String(expense.id)));
       const undoRoom = withActivity({
         ...latestRoom,
-        expenses: [...restored, ...(latestRoom.expenses || [])],
-      }, 'undo', `Restored "${removed[0].desc || 'transaction'}"`);
+        expenses: restoreSettlementFields(
+          [...restored, ...(latestRoom.expenses || [])],
+          settlementSnapshot,
+        ),
+      }, 'undo', `Restored "${deletedTransaction?.desc || 'transaction'}"`);
       return save(undoRoom);
     });
   };
 
-  const handleRecordPayments = async (expense, selected) => {
+  const handleSetParticipantsSettled = async (expenseId, memberNames, shouldSettle) => {
     const currentRoom = roomRef.current;
-    if (!currentRoom || !selected.length || settlingKey !== null) return false;
-    const lines = selected.map(({ from, to, amount }) => `${from} → ${to}: ${formatCurrency(amount, currentRoom.currency)}`).join('\n');
-    if (!window.confirm(`Mark ${selected.length} payment(s) as settled for this specific transaction, "${expense.desc}"?\n\n${lines}\n\nThis does not settle other transactions.`)) return false;
-    setSettlingKey(`expense:${expense.id}`);
-    const batchId = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const timestamp = todayIsoDate();
-    const settlementEntries = selected.map(({ from, to, amount, index }) => ({
-      id: `${batchId}-${index}`,
-      desc: `Settlement for ${expense.desc}: ${from} → ${to}`,
-      amount,
-      paidBy: from,
-      payers: [{ member: from, amount }],
-      splitWith: [to],
-      splitShares: { [to]: amount },
-      datetime: timestamp,
-      isSettlement: true,
-      sourceExpenseId: expense.id,
-      sourceTransferIndex: index,
-      settlementBatchId: batchId,
-    }));
+    if (!currentRoom || settlingKey !== null) return;
+    const currentExpenses = currentRoom.expenses || [];
+    const expense = currentExpenses.find((entry) => String(entry.id) === String(expenseId) && !entry.isSettlement);
+    if (!expense) return false;
+    const participants = new Set(expense.splitWith || []);
+    const changedMembers = [...new Set(memberNames)].filter((member) => participants.has(member));
+    if (!changedMembers.length) return false;
+
+    const settledMembers = new Set(getSettledMemberIds(expense, currentExpenses));
+    const nextSettledMembers = new Set(settledMembers);
+    changedMembers.forEach((member) => {
+      if (shouldSettle) nextSettledMembers.add(member);
+      else nextSettledMembers.delete(member);
+    });
+    if (settledMembers.size === nextSettledMembers.size
+      && [...settledMembers].every((member) => nextSettledMembers.has(member))) return false;
+
+    const payerNames = new Set((Array.isArray(expense.payers) && expense.payers.length
+      ? expense.payers.map((payer) => payer.member)
+      : [expense.paidBy]).filter(Boolean));
+    const existingCashEvents = Array.isArray(expense.settlementCashEvents)
+      ? expense.settlementCashEvents
+      : [];
+    const settlementCashEvents = shouldSettle
+      ? [
+        ...existingCashEvents,
+        ...changedMembers
+          .filter((member) => !settledMembers.has(member) && !payerNames.has(member))
+          .flatMap((member) => getCreditOwnerShares(expense)
+            .filter((share) => share.memberId === member && share.creditOwnerId !== member)
+            .map((share) => ({
+              from: member,
+              to: share.creditOwnerId,
+              amount: share.amount,
+            }))),
+      ]
+      : existingCashEvents.filter((event) => !changedMembers.includes(event.from));
+
+    const neutralizePayers = new Set(changedMembers);
+    const previousState = captureSettlementFields(currentExpenses, (entry) => (
+      String(entry.id) === String(expense.id)
+      || (entry.isSettlement
+        && String(entry.sourceExpenseId) === String(expense.id)
+        && neutralizePayers.has(getSettlementPayer(entry)))
+      || (entry.isSettlement
+        && entry.balanceNeutral
+        && (entry.settledExpenseIds || []).some((id) => String(id) === String(expense.id))
+        && neutralizePayers.has(getSettlementPayer(entry)))
+    ));
+    const expenses = currentExpenses.map((entry) => {
+      if (String(entry.id) === String(expense.id)) {
+        return {
+          ...entry,
+          settledMemberIds: [...nextSettledMembers],
+          settlementCashEvents,
+        };
+      }
+      if (entry.isSettlement
+        && String(entry.sourceExpenseId) === String(expense.id)
+        && neutralizePayers.has(getSettlementPayer(entry))) {
+        return { ...entry, balanceNeutral: true };
+      }
+      if (entry.isSettlement
+        && entry.balanceNeutral
+        && neutralizePayers.has(getSettlementPayer(entry))
+        && (entry.settledExpenseIds || []).some((id) => String(id) === String(expense.id))) {
+        return {
+          ...entry,
+          settledExpenseIds: entry.settledExpenseIds.filter((id) => String(id) !== String(expense.id)),
+          settlementStatusChanges: (entry.settlementStatusChanges || []).filter((change) => (
+            String(change.expenseId) !== String(expense.id)
+            || !changedMembers.includes(change.memberId)
+          )),
+        };
+      }
+      return entry;
+    });
+    const action = shouldSettle ? 'settled' : 'unsettled';
+    const verb = shouldSettle ? 'Settled' : 'Unsettled';
+    const description = changedMembers.length === 1
+      ? `${verb} ${changedMembers[0]}'s share of "${expense.desc}"`
+      : `${verb} ${changedMembers.length} shares of "${expense.desc}"`;
+    setSettlingKey(`participants:${expense.id}`);
     try {
       const nextRoom = withActivity({
         ...currentRoom,
-        expenses: [...settlementEntries, ...(currentRoom.expenses || [])],
-      }, 'settled', `Settled "${expense.desc}"`);
+        expenses,
+      }, action, description);
       const saved = await save(nextRoom);
       if (saved) {
-        const settlementIds = new Set(settlementEntries.map((entry) => String(entry.id)));
-        showUndoToast(`Settled "${expense.desc}".`, async () => {
+        showUndoToast(`${description}.`, async () => {
           const latestRoom = roomRef.current;
           if (!latestRoom) return false;
           const undoRoom = withActivity({
             ...latestRoom,
-            expenses: (latestRoom.expenses || []).filter((entry) => !settlementIds.has(String(entry.id))),
-          }, 'undo', `Undid settlement for "${expense.desc}"`);
+            expenses: restoreSettlementFields(latestRoom.expenses || [], previousState),
+          }, 'undo', `Undid ${description.toLowerCase()}`);
           return save(undoRoom);
         });
       }
       return saved;
-    } finally {
-      setSettlingKey(null);
-    }
-  };
-
-  const handleUndoPayments = async (expense) => {
-    const currentRoom = roomRef.current;
-    if (!currentRoom || settlingKey !== null) return;
-    if (!window.confirm(`Undo settlement for "${expense.desc}"?`)) return;
-    const linkedIds = new Set((currentRoom.expenses || [])
-      .filter((entry) => entry.isSettlement && String(entry.sourceExpenseId) === String(expense.id))
-      .map((entry) => String(entry.id)));
-    if (!linkedIds.size) return;
-    setSettlingKey(`undo:${expense.id}`);
-    try {
-      const nextRoom = withActivity({
-        ...currentRoom,
-        expenses: (currentRoom.expenses || []).filter((entry) => !linkedIds.has(String(entry.id))),
-      }, 'unsettled', `Undid settlement for "${expense.desc}"`);
-      await save(nextRoom);
     } finally {
       setSettlingKey(null);
     }
@@ -407,20 +549,111 @@ export default function Room() {
     });
   };
 
+  const handleSettleSuggestion = async (suggestion) => {
+    const currentRoom = roomRef.current;
+    if (!currentRoom || settlingKey !== null) return;
+    const financials = calculateFinancials(currentRoom.members || [], currentRoom.expenses || []);
+    const remainingDebt = Math.max(0, -(Number(financials.balances[suggestion.from]) || 0));
+    const hasUnsettledShares = (currentRoom.expenses || []).some((expense) => (
+      !expense.isSettlement
+      && (expense.splitWith || []).includes(suggestion.from)
+      && !getSettledMemberIds(expense, currentRoom.expenses || []).includes(suggestion.from)
+    ));
+    if (hasUnsettledShares && Math.abs(Number(suggestion.amount) - remainingDebt) < 0.01) {
+      await handleRecordTransfer({
+        from: suggestion.from,
+        to: suggestion.to,
+        amount: suggestion.amount,
+        note: '',
+        date: todayIsoDate(),
+      });
+      return;
+    }
+    openTransfer(suggestion);
+  };
+
   const handleRecordTransfer = async ({ from, to, amount, note, date }) => {
     const currentRoom = roomRef.current;
     if (settlingKey !== null || !currentRoom?.members?.includes(currentUser)) return;
     const rounded = Math.round(Number(amount) * 100) / 100;
-    if (!Number.isFinite(rounded) || rounded <= 0 || from === to || !room.members.includes(from) || !room.members.includes(to)) {
+    if (!Number.isFinite(rounded) || rounded <= 0 || from === to
+      || !currentRoom.members.includes(from) || !currentRoom.members.includes(to)) {
       window.alert('Choose two different members and an amount greater than 0.');
       return;
     }
+    const currentExpenses = currentRoom.expenses || [];
+    const currentFinancials = calculateFinancials(currentRoom.members, currentExpenses);
+    const remainingDebt = Math.max(0, -(Number(currentFinancials.balances[from]) || 0));
+    const settlesFullRepayment = currentFinancials.settlements.some((suggestion) => (
+      suggestion.from === from
+      && suggestion.to === to
+      && Math.abs(Number(suggestion.amount) - remainingDebt) < 0.01
+    ));
+    const affectedExpenses = currentExpenses.filter((expense) => (
+      !expense.isSettlement
+      && (expense.splitWith || []).includes(from)
+      && !getSettledMemberIds(expense, currentExpenses).includes(from)
+    ));
+    const settlesFullDebt = affectedExpenses.length > 0
+      && settlesFullRepayment
+      && remainingDebt > 0.01
+      && Math.abs(rounded - remainingDebt) < 0.01;
     const formatted = formatCurrency(rounded, currentRoom.currency);
     const confirmation = from === currentUser || to === currentUser
-      ? `Record ${from} paying ${formatted} to ${to}? This updates shared balances only.`
-      : `Record ${from} paying ${formatted} to ${to}? This updates shared balances for other members only.`;
+      ? `Record ${from} paying ${formatted} to ${to}?${settlesFullDebt ? ` This also settles ${from}'s outstanding transaction shares.` : ' This updates shared balances only.'}`
+      : `Record ${from} paying ${formatted} to ${to}?${settlesFullDebt ? ` This also settles ${from}'s outstanding transaction shares for other members.` : ' This updates shared balances for other members only.'}`;
     if (!window.confirm(confirmation)) return;
     setSettlingKey('transfer');
+    const settledExpenseIds = new Set(affectedExpenses.map((expense) => String(expense.id)));
+    const payerCreditMove = settlesFullDebt
+      ? reassignUnsettledPayerCredits(currentExpenses, from, to)
+      : {
+        expenses: currentExpenses,
+        amount: 0,
+        creditOwnerChanges: [],
+        settlementStatusChanges: [],
+        changedExpenseIds: [],
+      };
+    const balanceNeutralChanges = settlesFullDebt
+      ? currentExpenses
+        .filter((expense) => (
+          expense.isSettlement
+          && !expense.internalSettlementOffset
+          && getSettlementPayer(expense) === from
+          && expense.balanceNeutral !== true
+        ))
+        .map((expense) => ({
+          expenseId: expense.id,
+          hadValue: Object.prototype.hasOwnProperty.call(expense, 'balanceNeutral'),
+          previousValue: expense.balanceNeutral,
+        }))
+      : [];
+    const changedExpenseIds = new Set([
+      ...settledExpenseIds,
+      ...payerCreditMove.changedExpenseIds.map(String),
+      ...balanceNeutralChanges.map((change) => String(change.expenseId)),
+    ]);
+    const previousState = captureSettlementFields(currentExpenses, (expense) => (
+      settlesFullDebt && changedExpenseIds.has(String(expense.id))
+    ));
+    const updatedExpenses = payerCreditMove.expenses.map((expense) => {
+      if (settlesFullDebt && settledExpenseIds.has(String(expense.id))) {
+        const settledMemberIds = new Set(
+          Array.isArray(expense.settledMemberIds)
+            ? expense.settledMemberIds
+            : getSettledMemberIds(expense, currentExpenses),
+        );
+        settledMemberIds.add(from);
+        return { ...expense, settledMemberIds: [...settledMemberIds] };
+      }
+      if (settlesFullDebt
+        && expense.isSettlement
+        && !expense.internalSettlementOffset
+        && getSettlementPayer(expense) === from) {
+        return { ...expense, balanceNeutral: true };
+      }
+      return expense;
+    });
     const entry = {
       id: Date.now(),
       desc: note || `Settlement: ${from} → ${to}`,
@@ -431,21 +664,56 @@ export default function Room() {
       splitShares: { [to]: rounded },
       datetime: date || todayIsoDate(),
       isSettlement: true,
+      ...(settlesFullDebt ? {
+        balanceNeutral: true,
+        settledExpenseIds: [...settledExpenseIds],
+        creditOwnerChanges: payerCreditMove.creditOwnerChanges,
+        settlementStatusChanges: payerCreditMove.settlementStatusChanges,
+        balanceNeutralChanges,
+      } : {}),
     };
+    const offsets = settlesFullDebt
+      ? createSettlementOffsets(affectedExpenses, from, to, entry.id, entry.datetime)
+      : [];
+    const projectedBalance = settlesFullDebt
+      ? calculateFinancials(
+        currentRoom.members,
+        [entry, ...offsets, ...updatedExpenses],
+      ).balances[from]
+      : 0;
+    const creditTransferAmount = Math.max(0, Math.round(Number(projectedBalance) * 100) / 100);
+    const payerCreditTransfer = settlesFullDebt
+      ? createPayerCreditTransfer(from, to, creditTransferAmount, entry.id, entry.datetime)
+      : null;
+    const internalAdjustments = [
+      ...offsets,
+      ...(payerCreditTransfer ? [payerCreditTransfer] : []),
+    ];
     try {
       const nextRoom = withActivity({
         ...currentRoom,
-        expenses: [entry, ...(currentRoom.expenses || [])],
-      }, 'settled', `Recorded transfer: ${from} → ${to}`);
+        expenses: [entry, ...internalAdjustments, ...updatedExpenses],
+      }, 'settled', settlesFullDebt
+        ? `Settled ${from}'s outstanding transaction shares`
+        : `Recorded transfer: ${from} → ${to}`);
       if (await save(nextRoom)) {
         setTransferDraft(null);
-        showUndoToast('Transfer recorded.', async () => {
+        showUndoToast(settlesFullDebt ? `${from}'s transaction shares settled.` : 'Transfer recorded.', async () => {
           const latestRoom = roomRef.current;
           if (!latestRoom) return false;
+          const transferRowIds = new Set([
+            String(entry.id),
+            ...internalAdjustments.map((adjustment) => String(adjustment.id)),
+          ]);
           const undoRoom = withActivity({
             ...latestRoom,
-            expenses: (latestRoom.expenses || []).filter((expense) => String(expense.id) !== String(entry.id)),
-          }, 'undo', `Undid transfer: ${from} → ${to}`);
+            expenses: restoreSettlementFields(
+              (latestRoom.expenses || []).filter((expense) => !transferRowIds.has(String(expense.id))),
+              previousState,
+            ),
+          }, 'undo', settlesFullDebt
+            ? `Undid settlement for ${from}`
+            : `Undid transfer: ${from} → ${to}`);
           return save(undoRoom);
         });
       }
@@ -482,11 +750,11 @@ export default function Room() {
   const importTransactions = async (transactions, newMembers) => {
     if (!room || !transactions.length) return false;
     const start = Date.now();
-    const additions = transactions.map((transaction, index) => ({
+    const additions = transactions.map((transaction, index) => withInitialSettledMembers({
       ...transaction,
       id: `${start}-${index}-${Math.random().toString(36).slice(2, 8)}`,
       datetime: todayIsoDate(),
-    }));
+    }, null, room.expenses || []));
     const updatedRoom = withActivity({
       ...room,
       members: [
@@ -616,6 +884,7 @@ export default function Room() {
           settlements={financials.settlements}
           formatAmount={formatAmount}
           onOpenTransfer={openTransfer}
+          onSettleSuggestion={handleSettleSuggestion}
           transferLocked={settlingKey !== null}
         />
         <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] lg:gap-4">
@@ -645,8 +914,7 @@ export default function Room() {
               onEdit={handleStartEdit}
               onDelete={handleRemoveExpense}
               onImport={importTransactions}
-              onRecordPayments={handleRecordPayments}
-              onUndoPayments={handleUndoPayments}
+              onSetParticipantsSettled={handleSetParticipantsSettled}
             />
           </div>
           <BalancesSidebar
@@ -655,11 +923,12 @@ export default function Room() {
             balances={financials.balances}
             totalPaid={financials.totalPaid}
             totalShare={financials.totalShare}
-            totalSettled={financials.totalSettled}
+            netCashFlow={financials.netCashFlow}
             settlements={financials.settlements}
             currentUser={currentUser}
             formatAmount={formatAmount}
             onOpenTransfer={openTransfer}
+            onSettleSuggestion={handleSettleSuggestion}
             transferLocked={settlingKey !== null}
             onAddMember={handleAddMember}
             onRemoveMember={handleRemoveMember}

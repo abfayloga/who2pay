@@ -12,11 +12,12 @@ import {
   Trash2,
 } from 'lucide-react';
 import { formatCompactDate, formatDate, todayIsoDate, toIsoDate } from '../utils/formatDate';
-import { repaymentsForExpense } from '../utils/settlement';
+import { getSettledMemberIds } from '../utils/settlement';
 import { getExpenseShares } from '../utils/splitShares';
 import { EXPORT_HEADERS, TABLE_HEADERS, exportRowForTransaction, parseImportedTransactions, tableRowForTransaction, getPayers } from '../utils/tableTransactions';
 import { cardClass, fieldClass, primaryButton, secondaryButton } from '../utils/uiClasses';
 import DateField from './DateField';
+import ParticipantSettlementPopover from './ParticipantSettlementPopover';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import { CardHeading, MemberTag, ModalFrame } from './roomUi';
 
@@ -46,8 +47,7 @@ export default function TransactionList({
   onEdit,
   onDelete,
   onImport,
-  onRecordPayments,
-  onUndoPayments,
+  onSetParticipantsSettled,
   currentUser,
 }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -61,13 +61,13 @@ export default function TransactionList({
   const [importSaving, setImportSaving] = useState(false);
   const [importMessage, setImportMessage] = useState('');
   const [viewingExpenseId, setViewingExpenseId] = useState(null);
-  const [settlementExpenseId, setSettlementExpenseId] = useState(null);
   const [splitBreakdownExpenseId, setSplitBreakdownExpenseId] = useState(null);
   const [mobileMenuExpenseId, setMobileMenuExpenseId] = useState(null);
-  const [selectedRepayments, setSelectedRepayments] = useState([]);
+  const [participantPopover, setParticipantPopover] = useState(null);
 
   const hasFilters = Boolean(searchQuery || startDate || endDate || memberFilter !== 'ALL' || typeFilter !== 'EXPENSE');
   const filteredExpenses = expenses.filter((expense) => {
+    if (expense.internalSettlementOffset) return false;
     const payers = getPayers(expense).map((payer) => payer.member);
     const splitMembers = expense.splitWith || [];
     const query = searchQuery.trim().toLowerCase();
@@ -91,14 +91,21 @@ export default function TransactionList({
 
   const importPreview = parseImportedTransactions(importText, members);
   const viewingExpense = expenses.find((entry) => String(entry.id) === String(viewingExpenseId)) || null;
-  const settlementExpense = expenses.find((entry) => String(entry.id) === String(settlementExpenseId) && !entry.isSettlement) || null;
   const splitBreakdownExpense = expenses.find((entry) => String(entry.id) === String(splitBreakdownExpenseId)) || null;
   const splitBreakdownShares = splitBreakdownExpense ? getExpenseShares(splitBreakdownExpense) : {};
+  const participantPopoverExpense = expenses.find(
+    (entry) => !entry.isSettlement && String(entry.id) === String(participantPopover?.expenseId),
+  ) || null;
+  const participantPopoverSettledIds = participantPopoverExpense
+    ? getSettledMemberIds(participantPopoverExpense, expenses)
+    : [];
 
   const isExpenseSettled = (expense) => {
     if (expense.isSettlement) return false;
-    const repayments = repaymentsForExpense(expense, expenses);
-    return repayments.length > 0 && repayments.every((repayment) => repayment.paid);
+    const participants = [...new Set(expense.splitWith || [])];
+    if (!participants.length) return false;
+    const settledMembers = new Set(getSettledMemberIds(expense, expenses));
+    return participants.every((member) => settledMembers.has(member));
   };
 
   const renderSplitMembers = (expense) => {
@@ -235,42 +242,41 @@ export default function TransactionList({
     printWindow.document.close();
   };
 
-  const openExpenseSettlement = (expense) => {
-    if (settlingKey !== null) return;
-    setSettlementExpenseId(expense.id);
-    setSelectedRepayments([]);
-  };
-
-  const recordSelectedPayments = async () => {
-    if (!settlementExpense || settlingKey !== null) return;
-    const repayments = repaymentsForExpense(settlementExpense, expenses);
-    const selected = repayments.filter((transfer) => !transfer.paid && selectedRepayments.includes(transfer.index));
-    const saved = await onRecordPayments(settlementExpense, selected);
-    if (!saved) return;
-    setSettlementExpenseId(null);
-    setSelectedRepayments([]);
-  };
-
   const actionsFor = (expense) => {
-    const repayments = expense.isSettlement ? [] : repaymentsForExpense(expense, expenses);
-    const paidCount = repayments.filter((entry) => entry.paid).length;
-    const complete = repayments.length > 0 && paidCount === repayments.length;
-    const lockedByPayment = repayments.some((item) => item.paid);
-    const settlementControl = !expense.isSettlement && complete
-      ? <span role="status" className="inline-flex min-h-[34px] items-center rounded-full border border-[#bbf7d0] bg-[#f0fdf4] px-2.5 text-[11px] font-semibold text-[#166534] md:min-h-[28px] md:px-1 md:text-[10px]">Settled</span>
-      : !expense.isSettlement
-        ? (
-          <button
-            type="button"
-            onClick={() => openExpenseSettlement(expense)}
-            disabled={settlingKey !== null || !repayments.length}
-            title={!repayments.length ? 'No repayments needed' : `Settle this individual transaction${paidCount ? ` (${paidCount}/${repayments.length} payments recorded)` : ''}`}
-            className="inline-flex min-h-[34px] min-w-[64px] items-center justify-center whitespace-nowrap rounded-full border border-[#99f6e4] bg-[#f0fdfa] px-3.5 py-1 text-[11px] font-semibold text-[#0f766e] transition hover:bg-[#ccfbf1] disabled:opacity-50 md:min-h-[28px] md:text-[10px]"
-          >
-            Settle
-          </button>
-        )
-        : null;
+    const participants = [...new Set(expense.splitWith || [])];
+    const settledIds = getSettledMemberIds(expense, expenses);
+    const settledMembers = new Set(settledIds);
+    const settledCount = participants.filter((member) => settledMembers.has(member)).length;
+    const complete = participants.length > 0 && settledCount === participants.length;
+    const openParticipantPopover = (anchor) => {
+      if (settlingKey !== null || !participants.length) return;
+      setParticipantPopover({ expenseId: expense.id, anchor });
+    };
+    const settlementControl = !expense.isSettlement && participants.length > 0
+      ? (
+        <button
+          type="button"
+          onClick={(event) => openParticipantPopover(event.currentTarget)}
+          disabled={settlingKey !== null}
+          aria-label={complete
+            ? `Review settled transaction, ${settledCount} of ${participants.length}`
+            : `Settle transaction, ${settledCount} of ${participants.length} participants settled`}
+          title={complete ? 'Review or undo participant settlements' : 'Settle this individual transaction'}
+          className={`inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full border px-3.5 py-1 text-[11px] font-semibold disabled:opacity-50 md:min-h-[28px] md:px-1 md:text-[10px] ${complete ? 'border-[#bbf7d0] bg-[#f0fdf4] text-[#166534]' : 'min-w-[64px] border-[#99f6e4] bg-[#f0fdfa] text-[#0f766e] transition hover:bg-[#ccfbf1]'}`}
+        >
+          {complete ? (
+            <>Settled ({settledCount}/{participants.length})</>
+          ) : (
+            <>
+              <span>Settle</span>
+              <span className="settlement-fraction-badge rounded-full border border-[#cbd5e1] bg-white/70 px-1 py-0.5 text-[9px] font-semibold leading-none tabular-nums text-[#475569]">
+                {settledCount}/{participants.length}
+              </span>
+            </>
+          )}
+        </button>
+      )
+      : null;
 
     const closeMenu = (action) => {
       setMobileMenuExpenseId(null);
@@ -281,13 +287,8 @@ export default function TransactionList({
         <button type="button" role="menuitem" onClick={() => closeMenu(() => setViewingExpenseId(expense.id))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9]">
           <Eye className="h-4 w-4" /> View details
         </button>
-        {!expense.isSettlement && paidCount > 0 && (
-          <button type="button" role="menuitem" disabled={settlingKey !== null} onClick={() => closeMenu(() => onUndoPayments(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9] disabled:opacity-50">
-            Undo settlement
-          </button>
-        )}
         {!expense.isSettlement && (
-          <button type="button" role="menuitem" disabled={lockedByPayment} onClick={() => closeMenu(() => onEdit(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9] disabled:opacity-50">
+          <button type="button" role="menuitem" onClick={() => closeMenu(() => onEdit(expense))} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-[#334155] hover:bg-[#f1f5f9]">
             <Pencil className="h-4 w-4" /> Edit
           </button>
         )}
@@ -310,38 +311,19 @@ export default function TransactionList({
             <Eye className="h-3.5 w-3.5" />
           </button>
           {settlementControl}
-          {!expense.isSettlement && paidCount > 0 && (
+          <div className="relative">
             <button
               type="button"
-              onClick={() => onUndoPayments(expense)}
-              disabled={settlingKey !== null}
-              title="Undo recorded payments for this transaction"
-              aria-label={`Undo settlement for ${expense.desc}`}
-              className="inline-flex min-h-[28px] shrink-0 items-center rounded-md px-0.5 text-[10px] font-semibold text-[#64748b] hover:bg-[#f1f5f9] disabled:opacity-50"
+              onClick={() => setMobileMenuExpenseId((current) => String(current) === String(expense.id) ? null : expense.id)}
+              aria-label={`More actions for ${expense.desc || 'transaction'}`}
+              aria-expanded={String(mobileMenuExpenseId) === String(expense.id)}
+              title="More actions"
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#64748b] hover:bg-[#f1f5f9] hover:text-[#0f172a]"
             >
-              Undo
+              <MoreHorizontal className="h-4 w-4" />
             </button>
-          )}
-          {!expense.isSettlement && !lockedByPayment && (
-            <button
-              type="button"
-              onClick={() => onEdit(expense)}
-              title="Edit transaction"
-              aria-label={`Edit ${expense.desc}`}
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#64748b] transition hover:bg-[#f0fdfa] hover:text-[#0f766e]"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onDelete(expense.id)}
-            title="Delete transaction"
-            aria-label={`Delete ${expense.desc}`}
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[#64748b] transition hover:bg-[#fff1f2] hover:text-[#be123c]"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+            {String(mobileMenuExpenseId) === String(expense.id) && moreActionsMenu}
+          </div>
         </div>
         <div className="relative flex items-center gap-1 md:hidden">
           {settlementControl}
@@ -360,10 +342,6 @@ export default function TransactionList({
       </>
     );
   };
-
-  const settlementRepayments = settlementExpense ? repaymentsForExpense(settlementExpense, expenses) : [];
-  const remainingRepayments = settlementRepayments.filter((entry) => !entry.paid);
-  const selectedRemainingCount = selectedRepayments.filter((index) => remainingRepayments.some((entry) => entry.index === index)).length;
 
   return (
     <section className={cardClass}>
@@ -616,48 +594,18 @@ export default function TransactionList({
         </ModalFrame>
       )}
 
-      {settlementExpense && (
-        <ModalFrame
-          titleId="expense-payment-title"
-          title="Record transaction payments"
-          onClose={() => setSettlementExpenseId(null)}
-          closeDisabled={settlingKey !== null}
-          closeLabel="Close payment checklist"
-          panelClassName="sm:max-w-lg"
-        >
-          <div className="mt-3 max-h-[45vh] space-y-2 overflow-y-auto">
-            {settlementRepayments.map((entry) => (
-              <label
-                key={entry.index}
-                className={`flex items-center gap-3 rounded-lg border p-3 ${entry.paid ? 'border-[#bbf7d0] bg-[#f0fdf4]' : 'border-[#e2e8f0] bg-white'}`}
-              >
-                <input
-                  type="checkbox"
-                  checked={entry.paid || selectedRepayments.includes(entry.index)}
-                  disabled={entry.paid || settlingKey !== null}
-                  onChange={(event) => setSelectedRepayments((current) => (
-                    event.target.checked ? [...current, entry.index] : current.filter((index) => index !== entry.index)
-                  ))}
-                  className="h-4 w-4 shrink-0 accent-[#0f766e]"
-                />
-                <span className="min-w-0 flex-1 text-sm text-[#334155]">
-                  <strong>{entry.from}</strong> pays <strong>{entry.to}</strong>
-                  {entry.paid && <span className="ml-2 text-xs font-semibold text-[#15803d]">Recorded</span>}
-                </span>
-                <strong className="shrink-0 text-sm text-[#0f172a]">{formatAmount(entry.amount)}</strong>
-              </label>
-            ))}
-          </div>
-          {!remainingRepayments.length && <p className="mt-3 text-sm font-medium text-[#15803d]">All repayments for this expense have been recorded.</p>}
-          <div className="mt-5 flex justify-end gap-2">
-            <button type="button" disabled={settlingKey !== null} onClick={() => setSettlementExpenseId(null)} className={secondaryButton}>Close</button>
-            {remainingRepayments.length > 0 && (
-              <button type="button" onClick={recordSelectedPayments} disabled={settlingKey !== null || !selectedRemainingCount} className={primaryButton}>
-                {settlingKey !== null ? 'Saving…' : `Record ${selectedRemainingCount} payment(s)`}
-              </button>
-            )}
-          </div>
-        </ModalFrame>
+      {participantPopoverExpense && participantPopover?.anchor?.isConnected && (
+        <ParticipantSettlementPopover
+          expense={{ ...participantPopoverExpense, settledMemberIds: participantPopoverSettledIds }}
+          anchor={participantPopover.anchor}
+          colors={colors}
+          currentUser={currentUser}
+          formatAmount={formatAmount}
+          saving={settlingKey !== null}
+          onSetParticipant={(member, shouldSettle) => onSetParticipantsSettled(participantPopoverExpense.id, [member], shouldSettle)}
+          onSetParticipants={(names, shouldSettle) => onSetParticipantsSettled(participantPopoverExpense.id, names, shouldSettle)}
+          onClose={() => setParticipantPopover(null)}
+        />
       )}
     </section>
   );

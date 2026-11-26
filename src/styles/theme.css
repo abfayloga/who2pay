@@ -33,6 +33,11 @@ html.w2p-dark [class~="text-[#047857]"] { color: #6ee7b7 !important; }
 html.w2p-dark [class~="text-[#b91c1c]"] { color: #fca5a5 !important; }
 html.w2p-dark [class~="text-[#be123c]"] { color: #fda4af !important; }
 html.w2p-dark [class~="text-[#92400e]"] { color: #fdba74 !important; }
+html.w2p-dark span.settlement-fraction-badge {
+  background-color: #27272a !important;
+  border-color: #52525b !important;
+  color: #f4f4f5 !important;
+}
 html.w2p-dark [class~="border-[#e6e3dc]"] { border-color: #303036 !important; }
 html.w2p-dark [class~="border-[#cbd5e1]"] { border-color: #3f3f46 !important; }
 html.w2p-dark [class~="border-[#dedbd4]"] { border-color: #303036 !important; }

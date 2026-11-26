@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { Check, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeftRight, Check, PieChart, Plus, Receipt, Trash2, X } from 'lucide-react';
 import { getExpenseShares } from '../utils/splitShares';
 import { MEMBER_PALETTE, memberColor } from '../utils/memberColor';
 import { cardClass, fieldClass, primaryButton, secondaryButton } from '../utils/uiClasses';
 import { CardHeading, MemberTag } from './roomUi';
 
-function RepaymentRow({ suggestion, currentUser, formatAmount, onOpen, locked }) {
+function RepaymentRow({ suggestion, currentUser, formatAmount, onOpen, onSettle, locked }) {
   const incoming = suggestion.to === currentUser;
   const label = incoming ? 'Received' : 'Settle';
   return (
@@ -22,7 +22,7 @@ function RepaymentRow({ suggestion, currentUser, formatAmount, onOpen, locked })
       <button
         type="button"
         disabled={locked}
-        onClick={() => onOpen(suggestion)}
+        onClick={() => onSettle(suggestion)}
         className={`${primaryButton} !px-3 !py-2 !text-xs`}
         aria-label={incoming
           ? `Record receipt of ${formatAmount(suggestion.amount)} from ${suggestion.from}`
@@ -44,6 +44,7 @@ export function GroupSummary({
   settlements,
   formatAmount,
   onOpenTransfer,
+  onSettleSuggestion,
   transferLocked,
 }) {
   const totalExpenses = expenses.filter((expense) => !expense.isSettlement)
@@ -121,7 +122,7 @@ export function GroupSummary({
                     <button
                       type="button"
                       disabled={transferLocked}
-                      onClick={() => onOpenTransfer(suggestion)}
+                      onClick={() => onSettleSuggestion(suggestion)}
                       className={`${primaryButton} !px-3 !py-2 !text-xs`}
                     >
                       {incoming ? 'Received' : 'Settle'}
@@ -143,11 +144,12 @@ export default function BalancesSidebar({
   balances,
   totalPaid,
   totalShare,
-  totalSettled,
+  netCashFlow,
   settlements,
   currentUser,
   formatAmount,
   onOpenTransfer,
+  onSettleSuggestion,
   transferLocked,
   onAddMember,
   onRemoveMember,
@@ -196,6 +198,18 @@ export default function BalancesSidebar({
 
   const renderBalanceCard = (name) => {
     const balance = balances[name] || 0;
+    const spent = Number(totalPaid[name]) || 0;
+    const share = Number(totalShare[name]) || 0;
+    const cashFlow = Number(netCashFlow[name]) || 0;
+    const netCashFlowLabel = cashFlow > 0.01
+      ? `+${formatAmount(cashFlow)}`
+      : cashFlow < -0.01 ? `−${formatAmount(Math.abs(cashFlow))}` : formatAmount(0);
+    const cashFlowLabel = cashFlow > 0.01 ? 'Received' : 'Settled';
+    const signedBalance = balance > 0.01
+      ? `+${formatAmount(balance)}`
+      : balance < -0.01 ? `−${formatAmount(Math.abs(balance))}` : formatAmount(0);
+    const breakdownTooltip = `Spent: ${formatAmount(spent)} · Share: ${formatAmount(share)} · ${cashFlowLabel}: ${netCashFlowLabel} · Current Balance: ${signedBalance}`;
+    const breakdownTooltipId = `balance-breakdown-tooltip-${members.indexOf(name)}`;
     return (
       <div key={name} className="rounded-lg border border-[#e6e3dc] bg-[#faf9f6] px-3 py-2.5">
         <div className="flex items-center justify-between gap-2">
@@ -211,13 +225,51 @@ export default function BalancesSidebar({
             currentUser={currentUser}
             formatAmount={formatAmount}
             onOpen={onOpenTransfer}
+            onSettle={onSettleSuggestion}
             locked={transferLocked}
           />
         ))}
-        <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 border-t border-[#e6e3dc] pt-1.5 text-[10px] text-[#64748b]">
-          <span>Paid: <span className="font-medium tabular-nums">{formatAmount(totalPaid[name])}</span></span>
-          <span>Share: <span className="font-medium tabular-nums">{formatAmount(totalShare[name])}</span></span>
-          <span>Settled: <span className="font-medium tabular-nums">{formatAmount(totalSettled[name])}</span></span>
+        <div
+          title={breakdownTooltip}
+          aria-label={breakdownTooltip}
+          aria-describedby={breakdownTooltipId}
+          tabIndex={0}
+          className="group relative mt-1.5 flex max-w-full items-center gap-x-[14px] whitespace-nowrap overflow-visible border-t border-[#e6e3dc] pt-1.5 text-[10px] text-[#64748b] tabular-nums"
+        >
+          <span
+            role="group"
+            className="flex shrink-0 items-center gap-1"
+            title={`Spent: ${formatAmount(spent)}`}
+            aria-label={`Spent: ${formatAmount(spent)}`}
+          >
+            <Receipt aria-hidden="true" className="h-[13px] w-[13px] shrink-0 opacity-75" />
+            <span className="font-medium">{formatAmount(spent)}</span>
+          </span>
+          <span
+            role="group"
+            className="flex shrink-0 items-center gap-1"
+            title={`Share: ${formatAmount(share)}`}
+            aria-label={`Share: ${formatAmount(share)}`}
+          >
+            <PieChart aria-hidden="true" className="h-[13px] w-[13px] shrink-0 opacity-75" />
+            <span className="font-medium">{formatAmount(share)}</span>
+          </span>
+          <span
+            role="group"
+            className="flex shrink-0 items-center gap-1"
+            title={`${cashFlowLabel}: ${netCashFlowLabel}`}
+            aria-label={`${cashFlowLabel}: ${netCashFlowLabel}`}
+          >
+            <ArrowLeftRight aria-hidden="true" className="h-[13px] w-[13px] shrink-0 opacity-75" />
+            <span className="font-medium">{netCashFlowLabel}</span>
+          </span>
+          <span
+            id={breakdownTooltipId}
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full left-0 z-30 mb-2 hidden max-w-[calc(100vw-2rem)] whitespace-normal rounded-md border border-[#e6e3dc] bg-white px-2.5 py-1.5 text-[10px] font-medium text-[#475569] shadow-md group-hover:block group-focus:block"
+          >
+            {breakdownTooltip}
+          </span>
         </div>
       </div>
     );

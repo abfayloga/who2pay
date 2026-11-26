@@ -1,4 +1,4 @@
-import { formatDate } from './formatDate';
+import { formatDate } from './formatDate.js';
 
 // Shared four-column table format for paste import.
 export const TABLE_HEADERS = ['Description', 'Amount', 'Paid By', 'Split Between'];
